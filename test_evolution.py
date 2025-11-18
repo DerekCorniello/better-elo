@@ -1,18 +1,17 @@
-#!/usr/bin/env python3
-
+from src.evaluation import run_evaluation, statistical_analysis, train_test_split, predict_momentum_adjustment
+from src.data_generator import RealDataGenerator
 import sys
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
-
-from src.data_generator import RealDataGenerator
-from src.evaluation import run_evaluation, statistical_analysis, train_test_split, predict_momentum_adjustment
+sys.path.insert(0, os.path.abspath(
+    os.path.join(os.path.dirname(__file__), 'src')))
 
 
 def plot_velocity_scatter(test_dataset, predictions, actuals, username):
     """Plot scatter of predicted vs actual velocities."""
-    print(f"Velocity scatter: {len(predictions)} points, actual range: {min(actuals):.1f} to {max(actuals):.1f}, predicted range: {min(predictions):.1f} to {max(predictions):.1f}")
+    print(f"Velocity scatter: {len(predictions)} points, actual range: {min(actuals):.1f} to {
+          max(actuals):.1f}, predicted range: {min(predictions):.1f} to {max(predictions):.1f}")
     plt.figure(figsize=(8, 6))
     plt.scatter(actuals, predictions, alpha=0.6, color='blue')
     plt.plot([min(actuals), max(actuals)], [min(actuals), max(actuals)],
@@ -72,14 +71,16 @@ def plot_full_trajectory(dataset, best_weights, username):
     actual_elos = []
     differences = []
     for i, game in enumerate(sorted_dataset):
-        adjustment = predict_momentum_adjustment(best_weights, game.to_feature_vector())
+        adjustment = predict_momentum_adjustment(
+            best_weights, game.to_feature_vector())
         predicted_elo = game.pre_game_elo + adjustment
         predicted_elos.append(predicted_elo)
         actual_elos.append(game.post_game_elo)
         differences.append(predicted_elo - game.post_game_elo)
         # Debug: print first 10
         if i < 10:
-            print(f"Game {i}: predicted={predicted_elo:.1f}, actual={game.post_game_elo:.1f}, diff={predicted_elo - game.post_game_elo:.1f}")
+            print(f"Game {i}: predicted={predicted_elo:.1f}, actual={
+                  game.post_game_elo:.1f}, diff={predicted_elo - game.post_game_elo:.1f}")
 
     game_indices = list(range(len(sorted_dataset)))
 
@@ -91,25 +92,34 @@ def plot_full_trajectory(dataset, best_weights, username):
     # Plot 1: Trajectories
     plt.figure(figsize=(14, 8))
     plt.subplot(2, 1, 1)
-    plt.plot(game_indices, actual_elos, label='Chess.com Elo (Actual)', color='blue', linewidth=2)
-    plt.plot(game_indices, predicted_elos, label='Predicted True Elo (Adjusted)', color='orange', linewidth=2)
-    plt.fill_between(game_indices, actual_elos, predicted_elos, where=(predicted_elos > actual_elos), color='green', alpha=0.3, label='Underrated (Predicted > Actual)')
-    plt.fill_between(game_indices, actual_elos, predicted_elos, where=(predicted_elos < actual_elos), color='red', alpha=0.3, label='Overrated (Predicted < Actual)')
+    plt.plot(game_indices, actual_elos,
+             label='Chess.com Elo (Actual)', color='blue', linewidth=2)
+    plt.plot(game_indices, predicted_elos,
+             label='Predicted True Elo (Adjusted)', color='orange', linewidth=2)
+    plt.fill_between(game_indices, actual_elos, predicted_elos, where=(
+        predicted_elos > actual_elos), color='green', alpha=0.3, label='Underrated (Predicted > Actual)')
+    plt.fill_between(game_indices, actual_elos, predicted_elos, where=(
+        predicted_elos < actual_elos), color='red', alpha=0.3, label='Overrated (Predicted < Actual)')
     plt.xlabel('Game Index (Chronological)')
     plt.ylabel('Elo Rating')
-    plt.title(f'Elo Trajectories: Chess.com vs. Predicted True Elo for {username}')
+    plt.title(
+        f'Elo Trajectories: Chess.com vs. Predicted True Elo for {username}')
     plt.legend()
     plt.grid(True)
 
     # Plot 2: Difference over time
     plt.subplot(2, 1, 2)
     plt.plot(game_indices, differences, color='purple', linewidth=1)
-    plt.axhline(0, color='black', linestyle='--', linewidth=1, label='No Difference')
-    plt.fill_between(game_indices, 0, differences, where=(differences > 0), color='green', alpha=0.3)
-    plt.fill_between(game_indices, 0, differences, where=(differences < 0), color='red', alpha=0.3)
+    plt.axhline(0, color='black', linestyle='--',
+                linewidth=1, label='No Difference')
+    plt.fill_between(game_indices, 0, differences, where=(
+        differences > 0), color='green', alpha=0.3)
+    plt.fill_between(game_indices, 0, differences, where=(
+        differences < 0), color='red', alpha=0.3)
     plt.xlabel('Game Index (Chronological)')
     plt.ylabel('Elo Difference (Predicted - Actual)')
-    plt.title(f'Elo Difference: Where Our Model Improves on Chess.com for {username}')
+    plt.title(
+        f'Elo Difference: Where Our Model Improves on Chess.com for {username}')
     plt.legend()
     plt.grid(True)
 
@@ -151,7 +161,8 @@ def main():
     print(f"Evolved R²: {results['evolved_mean_r2']:.3f} ± {
           results['evolved_std_r2']:.3f}")
     print(f"Improvement (lower MSE): {results['improvement']:.3f}")
-    print(f"t-statistic: {results['t_stat']          :.3f}, p-value: {results['p_value']:.3f}")
+    print(f"t-statistic: {results['t_stat']
+          :.3f}, p-value: {results['p_value']:.3f}")
     if results['p_value'] < 0.05:
         print("Statistically significant improvement!")
     else:
@@ -159,7 +170,8 @@ def main():
 
     # Print best weights for interpretation
     print("Best weights (for momentum adjustment):")
-    features = ['Win Streak', 'Recent Win Rate', 'Avg Accuracy', 'Rating Trend', 'Games Last 30d', 'Velocity']
+    features = ['Win Streak', 'Recent Win Rate', 'Avg Accuracy',
+                'Rating Trend', 'Games Last 30d', 'Velocity']
     for i, w in enumerate(best):
         print(f"  {features[i]}: {w:.3f}")
     print("Interpretation: Higher positive weights indicate stronger momentum impact.")
@@ -172,8 +184,10 @@ def main():
     actuals = [game.post_game_elo for game in test]
     print(f"Test set size: {len(test)}")
     print(f"Actual Elo range: {min(actuals):.1f} to {max(actuals):.1f}")
-    print(f"Predicted Elo range: {min(predictions):.1f} to {max(predictions):.1f}")
-    print(f"Sample actual vs predicted: {actuals[0]:.1f} vs {predictions[0]:.1f}")
+    print(f"Predicted Elo range: {
+          min(predictions):.1f} to {max(predictions):.1f}")
+    print(f"Sample actual vs predicted: {
+          actuals[0]:.1f} vs {predictions[0]:.1f}")
     plot_velocity_scatter(test, predictions, actuals, username)
     plot_elo_trajectory(test, predictions, actuals, username)
     plot_feature_weights(best, username)

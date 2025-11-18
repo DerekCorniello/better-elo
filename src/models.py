@@ -1,17 +1,19 @@
 from dataclasses import dataclass
 from typing import List, Dict, Any
 
+# TODO: add more descriptions for all of the dataclass features, as to what they represent and such
+
 
 @dataclass
 class PlayerFeatures:
     username: str
     current_elo: float
     win_streak: int
-    recent_win_rate: float  # 0.0 to 1.0
-    avg_accuracy: float  # 0.0 to 100.0
+    recent_win_rate: float   # 0.0 to 1.0
+    avg_accuracy: float      # 0.0 to 100.0
     rating_trend: float
     games_last_30d: int
-    velocity: float = 0.0  # Elo change per game over window
+    velocity: float = 0.0    # Elo change per game over window
 
     def to_feature_vector(self) -> List[float]:
         return [
@@ -56,6 +58,8 @@ class MatchData:
         white_result = game_dict['white']['result']
         black_result = game_dict['black']['result']
         accuracies = game_dict.get('accuracies', {})
+
+        # TODO: theses accuracies are never used? needs investigation.
         white_accuracy = accuracies.get('white', 0.0)
         black_accuracy = accuracies.get('black', 0.0)
         end_time = game_dict['end_time']
@@ -69,8 +73,10 @@ class MatchData:
         was_draw = white_result == 'draw' or black_result == 'draw'
 
         # Calculate features from history
-        p1_features = cls._calculate_features(p1_username, p1_elo, p1_history, end_time)
-        p2_features = cls._calculate_features(p2_username, p2_elo, p2_history, end_time)
+        p1_features = cls._calculate_features(p1_username, p1_elo,
+                                              p1_history, end_time)
+        p2_features = cls._calculate_features(p2_username, p2_elo,
+                                              p2_history, end_time)
 
         return cls(
             player1=p1_features,
@@ -79,6 +85,7 @@ class MatchData:
             was_draw=was_draw
         )
 
+    # TODO: do we need this anymore since we have all the data we need?
     @classmethod
     def from_mock(cls, p1_elo: float, p2_elo: float, **kwargs) -> 'MatchData':
         # Generate mock features
@@ -105,8 +112,12 @@ class MatchData:
         )
 
         # Determine outcome based on adjusted ratings (simplified)
-        adjusted_p1 = p1_elo + sum(p1_features.to_feature_vector()[i] * random.uniform(-1, 1) for i in range(5))
-        adjusted_p2 = p2_elo + sum(p2_features.to_feature_vector()[i] * random.uniform(-1, 1) for i in range(5))
+        adjusted_p1 = p1_elo + \
+            sum(p1_features.to_feature_vector()[
+                i] * random.uniform(-1, 1) for i in range(5))
+        adjusted_p2 = p2_elo + \
+            sum(p2_features.to_feature_vector()[
+                i] * random.uniform(-1, 1) for i in range(5))
         p1_won = adjusted_p1 > adjusted_p2
         if random.random() < 0.2:  # 20% upset probability
             p1_won = not p1_won
@@ -144,7 +155,9 @@ class MatchData:
         return 1500.0  # default
 
     @staticmethod
-    def _calculate_features(username: str, current_elo: float, history: List[Dict[str, Any]], match_end_time: int) -> PlayerFeatures:
+    def _calculate_features(username: str, current_elo: float,
+                            history: List[Dict[str, Any]],
+                            match_end_time: int) -> PlayerFeatures:
         # Assume history is sorted by end_time ascending (earliest first)
         N = 10  # window size for recent metrics
         window_games = history[-N:] if len(history) >= N else history
@@ -162,7 +175,8 @@ class MatchData:
 
         # Recent win rate
         if window_games:
-            wins = sum(1 for game in window_games if MatchData._did_player_win(username, game))
+            wins = sum(1 for game in window_games
+                       if MatchData._did_player_win(username, game))
             recent_win_rate = wins / len(window_games)
         else:
             recent_win_rate = 0.5
@@ -173,18 +187,21 @@ class MatchData:
             acc = MatchData._get_player_accuracy(username, game)
             if acc > 0:
                 accuracies.append(acc)
-        avg_accuracy = sum(accuracies) / len(accuracies) if accuracies else 80.0
+        avg_accuracy = sum(accuracies) / \
+            len(accuracies) if accuracies else 80.0
 
         # Rating trend
         if window_games:
-            past_rating = MatchData._get_player_rating(username, window_games[0])
+            past_rating = MatchData._get_player_rating(
+                username, window_games[0])
             rating_trend = current_elo - past_rating
         else:
             rating_trend = 0.0
 
         # Games last 30 days
         thirty_days_ago = match_end_time - 30 * 24 * 3600
-        games_last_30d = sum(1 for game in history if game['end_time'] >= thirty_days_ago)
+        games_last_30d = sum(
+            1 for game in history if game['end_time'] >= thirty_days_ago)
 
         return PlayerFeatures(
             username=username,

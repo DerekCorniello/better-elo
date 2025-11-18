@@ -17,7 +17,8 @@ def get_user_games(username, months=3):
     archives_url = f"{base_url}/games/archives"
     response = requests.get(archives_url, headers=headers)
     if response.status_code != 200:
-        print(f"Failed to get archives: {response.status_code}:\n{response.text}")
+        print(f"Failed to get archives: {
+              response.status_code}:\n{response.text}")
         return []
 
     archives = response.json().get('archives', [])
@@ -29,7 +30,6 @@ def get_user_games(username, months=3):
         parts = archive.split('/')
         year = int(parts[-2])
         month = int(parts[-1])
-        archive_date = datetime(year, month, 1)
         months_diff = (now.year - year) * 12 + now.month - month
         if months_diff < months:
             recent_archives.append(archive)

@@ -10,7 +10,7 @@ class RealDataGenerator:
         self.username = username
 
     def generate_dataset(self, velocity_window: int = 10) -> List[UserGameData]:
-        # Load games from JSON
+        # Load games from JSON data we extracted
         filepath = f'data/{self.username}/games.json'
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Games file not found: {filepath}")
@@ -18,24 +18,20 @@ class RealDataGenerator:
         with open(filepath, 'r') as f:
             games = json.load(f)
 
-        # Filter to blitz time controls (180, 180+1, 180+2, etc.) for consistency
-        games = [g for g in games if g.get('time_control', '').startswith('180')]
+        # filter to blitz time controls (180, 180+1, 180+2) for consistency
+        # NOTE: you can filter anything if you want, but blitz is the most
+        # common with the largest amount of data
+        games = [g for g in games if g.get(
+            'time_control', '').startswith('180')]
         print(f"Filtered to {len(games)} blitz games for {self.username}")
-        # Debug: print unique time controls
-        unique_controls = set(g.get('time_control', '') for g in games)
-        print(f"Unique time controls: {unique_controls}")
-
-        # Sort games by end_time ascending
         games.sort(key=lambda g: g['end_time'])
 
         user_games = []
         history = []
 
         for i, game in enumerate(games):
-            # Debug: print first few games
-            if i < 5:
-                print(f"Game {i}: white={game['white']['username']}, black={game['black']['username']}, target={self.username}")
-            # Determine if user is white or black (case-insensitive)
+            # determine if user is white or black
+            # TODO: do we need the user result anymore?
             if game['white']['username'].lower() == self.username.lower():
                 post_rating = game['white']['rating']
                 user_result = game['white']['result']
@@ -43,9 +39,11 @@ class RealDataGenerator:
                 post_rating = game['black']['rating']
                 user_result = game['black']['result']
             else:
-                continue  # Skip if not the user
+                # shouldnt hit this but...
+                print("Skipping a game without the user in it (investigate the data)")
+                continue
 
-            # Compute velocity: Elo change over last N games
+            # compute velocity change over last N games
             if i >= velocity_window:
                 pre_window_game = games[i - velocity_window]
                 if pre_window_game['white']['username'] == self.username:
@@ -54,26 +52,24 @@ class RealDataGenerator:
                     pre_rating = pre_window_game['black']['rating']
                 velocity = (post_rating - pre_rating) / velocity_window
             else:
-                # Not enough history for velocity window
-                print(f"Skipping game {i} for {self.username}: i={i}, velocity_window={velocity_window}")
+                # not enough history for velocity window
                 continue
 
-            # Compute features from history before this game
-            features = self._calculate_features(history, post_rating, game['end_time'])
-            features.velocity = velocity  # Set velocity in features
+            # compute features from history before this game
+            features = self._calculate_features(
+                history, post_rating, game['end_time'])
+            features.velocity = velocity
 
             user_game = UserGameData(
                 username=self.username,
-                pre_game_elo=pre_rating,  # Elo before the current game
-                post_game_elo=post_rating,  # Elo after the current game
+                pre_game_elo=pre_rating,
+                post_game_elo=post_rating,
                 features=features,
-                end_time=game['end_time']  # Timestamp for sorting
+                end_time=game['end_time'],  # for sorting
+                velocity=velocity
             )
-            # Store velocity as a separate attribute for training
-            user_game.velocity = velocity
-            user_games.append(user_game)
 
-            # Update history
+            user_games.append(user_game)
             history.append(game)
 
         # Normalize features across the dataset
@@ -99,6 +95,6 @@ class RealDataGenerator:
 
         return user_games
 
+    # TODO: this is messy, lets fix
     def _calculate_features(self, history: List[dict], current_elo: float, match_end_time: int) -> PlayerFeatures:
-        # Use MatchData's static method
         return MatchData._calculate_features(self.username, current_elo, history, match_end_time)
