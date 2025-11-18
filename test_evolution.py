@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
 
-from better_elo import RealDataGenerator, run_evaluation, statistical_analysis, train_test_split, predict_momentum_adjustment
+from data_generator import RealDataGenerator
+from evaluation import run_evaluation, statistical_analysis, train_test_split, predict_momentum_adjustment
 
 
 def plot_velocity_scatter(test_dataset, predictions, actuals, username):
