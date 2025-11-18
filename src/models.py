@@ -34,6 +34,8 @@ class UserGameData:
     features: PlayerFeatures  # Features computed from history before this game
     velocity: float = 0.0  # Elo change per game over window
     momentum_adjustment: float = 0.0  # Predicted adjustment for true Elo
+    opponent_elo: float = 0.0  # Opponent's rating for win probability calc
+    actual_result: float = 0.0  # 1.0 for win, 0.5 for draw, 0.0 for loss
     end_time: int = 0  # Timestamp of game end for sorting
 
     def to_feature_vector(self) -> List[float]:

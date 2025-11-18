@@ -2,8 +2,15 @@ import random
 from typing import List, Tuple, Dict, Any
 import numpy as np
 from scipy import stats
-from .models import UserGameData
-from .ea import evaluate_individual, run_evolution
+import sys
+import os
+# Add current directory to path for absolute imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+from models import UserGameData
+from ea import evaluate_individual, run_evolution
 
 
 def train_test_split(dataset: List[UserGameData], test_size: float = 0.2,

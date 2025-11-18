@@ -1,7 +1,14 @@
 import random
 from typing import List
 from deap import base, creator, tools
-from .models import UserGameData
+import sys
+import os
+# Add current directory to path for absolute imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+from models import UserGameData
 
 
 def predict_momentum_adjustment(weights, features: list) -> float:

@@ -2,7 +2,14 @@ import json
 import os
 import numpy as np
 from typing import List
-from .models import UserGameData, PlayerFeatures, MatchData
+import sys
+import os
+# Add current directory to path for absolute imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+from models import UserGameData, PlayerFeatures, MatchData
 
 
 class RealDataGenerator:
@@ -60,38 +67,28 @@ class RealDataGenerator:
                 history, post_rating, game['end_time'])
             features.velocity = velocity
 
+            # Extract opponent Elo
+            if game['white']['username'].lower() == self.username.lower():
+                opponent_elo = game['black']['rating']
+            else:
+                opponent_elo = game['white']['rating']
+
             user_game = UserGameData(
                 username=self.username,
                 pre_game_elo=pre_rating,
                 post_game_elo=post_rating,
                 features=features,
                 end_time=game['end_time'],  # for sorting
-                velocity=velocity
+                velocity=velocity,
+                opponent_elo=opponent_elo,
+                actual_result=1.0 if user_result in ['win', 'resigned', 'checkmated'] else (0.0 if user_result in ['resigned', 'checkmated'] else 0.5)
             )
 
             user_games.append(user_game)
             history.append(game)
 
-        # Normalize features across the dataset
-        if user_games:
-            feature_vectors = [game.to_feature_vector() for game in user_games]
-            feature_array = np.array(feature_vectors)
-            means = np.mean(feature_array, axis=0)
-            stds = np.std(feature_array, axis=0)
-            stds = np.where(stds == 0, 1, stds)  # Avoid division by zero
-            normalized_features = (feature_array - means) / stds
-
-            for i, game in enumerate(user_games):
-                game.features = PlayerFeatures(
-                    username=game.username,
-                    current_elo=game.features.current_elo,  # Keep original Elo
-                    win_streak=normalized_features[i][0],
-                    recent_win_rate=normalized_features[i][1],
-                    avg_accuracy=normalized_features[i][2],
-                    rating_trend=normalized_features[i][3],
-                    games_last_30d=normalized_features[i][4],
-                    velocity=normalized_features[i][5]
-                )
+        # Keep original features - normalization destroys momentum patterns
+        # The evolutionary algorithm needs the raw, meaningful relationships
 
         return user_games
 
