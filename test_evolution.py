@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
 
-from data_generator import RealDataGenerator
-from evaluation import run_evaluation, statistical_analysis, train_test_split, predict_momentum_adjustment
+from src.data_generator import RealDataGenerator
+from src.evaluation import run_evaluation, statistical_analysis, train_test_split, predict_momentum_adjustment
 
 
 def plot_velocity_scatter(test_dataset, predictions, actuals, username):
@@ -121,7 +121,7 @@ def plot_full_trajectory(dataset, best_weights, username):
 
 def main():
     # Get username from command line or default to MagnusCarlsen
-    username = sys.argv[1] if len(sys.argv) > 1 else "MagnusCarlsen"
+    username = sys.argv[1] if len(sys.argv) > 1 else "AnnaCramling"
     velocity_window = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 
     # Generate real dataset with velocity window
