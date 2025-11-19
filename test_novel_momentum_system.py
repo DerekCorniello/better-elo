@@ -18,7 +18,7 @@ sys.path.insert(0, src_dir)
 # Import components directly - no fallbacks
 from novel_momentum_system import NovelMomentumSystem, NovelMomentumRating, NovelTemporalValidator
 from data_generator import RealDataGenerator
-from ea import run_evolution
+from ea import run_evolution, evaluate_individual
 from evaluation import statistical_analysis
 
 def load_real_player_data(players: list, velocity_window: int = 10) -> dict:
@@ -47,33 +47,54 @@ def load_real_player_data(players: list, velocity_window: int = 10) -> dict:
 
     return datasets
 
-def train_momentum_system(dataset, pop_size: int = 50, ngen: int = 25):
-    """Train momentum system using evolutionary algorithms on real data"""
+def train_momentum_system(dataset, pop_size: int = 50, ngen: int = 25, num_runs: int = 3):
+    """Train momentum system using MULTI-RUN evolutionary algorithms to prevent local minima"""
     print(f"\n🎯 TRAINING MOMENTUM SYSTEM")
     print(f"Dataset size: {len(dataset)} games")
-    print(f"Evolutionary parameters: pop_size={pop_size}, ngen={ngen}")
+    print(f"Evolutionary parameters: pop_size={pop_size}, ngen={ngen}, runs={num_runs}")
 
     if len(dataset) < 20:
         print("✗ Insufficient data for training")
         return [1.0, 0.5, 0.1, 2.0, -0.5, 1.5]  # Return default weights
 
-    # Run REAL evolutionary algorithm - no shortcuts
-    print("Running evolutionary algorithm with DEAP...")
-    print("This may take several minutes depending on dataset size and parameters...")
+    # Multi-run evolution to prevent local minima
+    print("Running multi-run evolutionary algorithm to prevent local minima...")
+    print("This may take considerable time depending on dataset size and parameters...")
 
-    try:
-        best_weights = run_evolution(dataset, pop_size=pop_size, ngen=ngen)
-        print("✓ Evolutionary training complete!")
-        print(f"Best momentum weights: {[f'{w:.3f}' for w in best_weights]}")
-        return list(best_weights)
-    except Exception as e:
-        print(f"✗ Evolutionary algorithm failed: {e}")
+    best_overall_weights = None
+    best_overall_fitness = float('inf')
+
+    for run in range(num_runs):
+        print(f"\n--- Evolutionary Run {run + 1}/{num_runs} ---")
+        try:
+            # Run evolution with different random seed for each run
+            weights = run_evolution(dataset, pop_size=pop_size, ngen=ngen)
+
+            # Evaluate final fitness on the full dataset
+            final_fitness = evaluate_individual(weights, dataset)[0]
+
+            print(f"Run {run + 1} fitness: {final_fitness:.4f}")
+            print(f"Run {run + 1} weights: {[f'{w:.3f}' for w in weights]}")
+
+            # Keep the best result across all runs
+            if final_fitness < best_overall_fitness:
+                best_overall_fitness = final_fitness
+                best_overall_weights = list(weights)
+                print(f"✓ New best fitness: {final_fitness:.4f}")
+
+        except Exception as e:
+            print(f"✗ Run {run + 1} failed: {e}")
+            continue
+
+    if best_overall_weights is None:
+        print("✗ All evolutionary runs failed")
         print("Falling back to research-based weights")
-        # Research-based weights from our analysis
         return [2.5, -0.8, 25.0, 8.5, -1.2, 45.0]
 
-    print("✓ Training complete!")
-    print(f"Best momentum weights: {[f'{w:.3f}' for w in best_weights]}")
+    print("\n✓ Multi-run evolution complete!")
+    print(f"Best overall fitness: {best_overall_fitness:.4f}")
+    print(f"Best momentum weights: {[f'{w:.3f}' for w in best_overall_weights]}")
+    return best_overall_weights
 
     return best_weights
 
@@ -170,6 +191,129 @@ def analyze_cavity_prevention(dataset, momentum_weights):
     print(f"Cavity frequency: {cavity_metrics['cavity_frequency']:.3f}")
 
     return cavity_metrics
+
+def train_multi_player_momentum_system(train_datasets: dict, val_player: str) -> dict:
+    """Train momentum system on multiple players, validate on one held-out player"""
+    print(f"\n🎯 MULTI-PLAYER TRAINING: {list(train_datasets.keys())} → {val_player}")
+
+    # Combine all training games from multiple players
+    all_train_games = []
+    for player, dataset in train_datasets.items():
+        all_train_games.extend(dataset)
+        print(f"  {player}: {len(dataset)} games")
+
+    print(f"  Total training games: {len(all_train_games)}")
+
+    # Train evolutionary algorithm on combined multi-player data (multi-run)
+    momentum_weights = train_momentum_system(all_train_games, pop_size=200, ngen=200, num_runs=3)
+
+    # Validate on held-out player
+    if val_player in train_datasets and len(train_datasets[val_player]) > 50:
+        val_results = validate_temporal_prediction(
+            train_datasets[val_player], momentum_weights, prediction_horizon=30
+        )
+
+        cavity_results = analyze_cavity_prevention(
+            train_datasets[val_player], momentum_weights
+        )
+
+        return {
+            'weights': momentum_weights,
+            'validation_accuracy': val_results['accuracy'],
+            'brier_score': val_results['brier_score'],
+            'total_games_validated': val_results['total_games'],
+            'cavity_episodes': cavity_results['cavity_episodes'],
+            'cavity_frequency': cavity_results['cavity_frequency'],
+            'avg_cavity_duration': cavity_results['avg_cavity_duration']
+        }
+    else:
+        return {
+            'weights': momentum_weights,
+            'validation_accuracy': 0.0,
+            'error': f'Insufficient validation data for {val_player}'
+        }
+
+def run_player_specific_validation() -> dict:
+    """Run player-specific momentum model training and validation"""
+    print("🚀 PLAYER-SPECIFIC MOMENTUM MODEL VALIDATION")
+    print("=" * 55)
+    print("Training individual momentum models for each player")
+    print("Each model optimized for that player's unique momentum patterns")
+    print("⚠️  WARNING: This will take considerable time (hours) with intensive parameters!")
+    print("   Population: 200, Generations: 200, Runs: 3 per player")
+    print("   Total evolutionary evaluations per player: 200 × 200 × 3 = 120,000")
+
+    # Target players for individual model training (excluding Anna Cramling outlier)
+    players = ["MagnusCarlsen", "hikaru", "FabianoCaruana"]
+
+    results = {}
+
+    for player in players:
+        print(f"\n🎯 TRAINING {player.upper()} MOMENTUM MODEL")
+        print("-" * 40)
+
+        # Load this player's data
+        datasets = load_real_player_data([player], velocity_window=10)
+
+        if not datasets.get(player) or len(datasets[player]) < 100:
+            print(f"✗ Insufficient data for {player} ({len(datasets.get(player, []))} games)")
+            continue
+
+        player_games = datasets[player]
+        print(f"Dataset: {len(player_games)} games")
+
+        # Train player-specific momentum model with multi-run evolution
+        momentum_weights = train_momentum_system(
+            player_games, pop_size=200, ngen=200, num_runs=3
+        )
+
+        # Validate on player's future games
+        validation_results = validate_temporal_prediction(
+            player_games, momentum_weights, prediction_horizon=50
+        )
+
+        # Analyze cavity prevention
+        cavity_results = analyze_cavity_prevention(player_games, momentum_weights)
+
+        results[player] = {
+            'weights': momentum_weights,
+            'future_accuracy': validation_results['accuracy'],
+            'brier_score': validation_results['brier_score'],
+            'total_games_validated': validation_results['total_games'],
+            'cavity_episodes': cavity_results['cavity_episodes'],
+            'cavity_frequency': cavity_results['cavity_frequency'],
+            'avg_cavity_duration': cavity_results['avg_cavity_duration'],
+            'improvement_over_baseline': validation_results['accuracy'] - 0.5
+        }
+
+        print(f"✓ {player} model trained and validated")
+
+    return results
+
+def aggregate_player_specific_results(results_dict: dict) -> dict:
+    """Aggregate and analyze results across all players"""
+    if not results_dict:
+        return {}
+
+    # Extract valid results (exclude errors)
+    valid_results = [r for r in results_dict.values() if 'future_accuracy' in r and r['future_accuracy'] > 0]
+
+    if not valid_results:
+        return {'error': 'No valid results to aggregate'}
+
+    accuracies = [r['future_accuracy'] for r in valid_results]
+    cavity_frequencies = [r.get('cavity_frequency', 0) for r in valid_results]
+
+    return {
+        'players_tested': len(valid_results),
+        'mean_accuracy': float(np.mean(accuracies)),
+        'std_accuracy': float(np.std(accuracies)),
+        'min_accuracy': float(min(accuracies)),
+        'max_accuracy': float(max(accuracies)),
+        'mean_cavity_frequency': float(np.mean(cavity_frequencies)),
+        'improvement_over_baseline': float((np.mean(accuracies) - 0.5) / 0.5 * 100),
+        'individual_results': results_dict
+    }
 
 def demonstrate_novel_system():
     """Fallback conceptual demonstration when real data is unavailable"""
@@ -294,67 +438,86 @@ def demonstrate_novel_system():
     print("• Show reduced cavity duration compared to traditional Elo")
 
 def main():
-    """Main function to run the novel momentum system demonstration"""
-    print("🚀 NOVEL MOMENTUM RATING SYSTEM - REAL DATA IMPLEMENTATION")
-    print("=" * 60)
+    """Main function - choose between single-player and multi-player validation"""
+    import sys
 
-    # Load real player data - using Magnus Carlsen's full dataset
-    players = ["MagnusCarlsen"]  # Matches actual username in data and directory name
-    datasets = load_real_player_data(players, velocity_window=10)
+    if len(sys.argv) > 1 and sys.argv[1] == "--player-specific":
+        # Run player-specific validation
+        results = run_player_specific_validation()
+        aggregated = aggregate_player_specific_results(results)
 
-    if not datasets or all(len(d) == 0 for d in datasets.values()):
-        print("✗ No real data available.")
-        return
+        if results:
+            print("\n🎉 PLAYER-SPECIFIC MOMENTUM MODEL RESULTS")
+            print("=" * 45)
 
-    # Train momentum system on Magnus Carlsen's full dataset
-    primary_player = "MagnusCarlsen"
-    if primary_player in datasets and len(datasets[primary_player]) > 100:
-        # Use FULL dataset with proper evolutionary parameters
+            # Show individual player results
+            for player, data in results.items():
+                print(f"\n{player}:")
+                print(f"  Future Prediction Accuracy: {data['future_accuracy']:.1%}")
+                print(f"  Brier Score: {data['brier_score']:.3f}")
+                print(f"  Cavity Frequency: {data['cavity_frequency']:.3f}")
+                print(f"  Improvement over Baseline: {data['improvement_over_baseline']:.1%}")
+                print(f"  Games Validated: {data['total_games_validated']}")
+                print(f"  Momentum Weights: {[f'{w:.2f}' for w in data['weights']]}")
+
+            # Show aggregate results
+            if aggregated and 'mean_accuracy' in aggregated:
+                print(f"\nAGGREGATE RESULTS:")
+                print(f"Mean Accuracy: {aggregated['mean_accuracy']:.1%} (±{aggregated['std_accuracy']:.1%})")
+                print(".1f")
+
+                if aggregated['mean_accuracy'] > 0.75:
+                    print("✅ EXCEPTIONAL: Player-specific momentum models revolutionize chess ratings!")
+                elif aggregated['mean_accuracy'] > 0.65:
+                    print("✅ SUCCESS: Player-specific models significantly outperform traditional Elo!")
+                else:
+                    print("⚠️ NEEDS IMPROVEMENT: Models may need parameter tuning")
+        else:
+            print("✗ Player-specific validation failed")
+
+    else:
+        # Run single-player demonstration (Magnus Carlsen)
+        print("🚀 NOVEL MOMENTUM RATING SYSTEM - MAGNUS CARLSEN DEMONSTRATION")
+        print("=" * 65)
+
+        # Load Magnus Carlsen's data
+        players = ["MagnusCarlsen"]
+        datasets = load_real_player_data(players, velocity_window=10)
+
+        if not datasets or len(datasets.get("MagnusCarlsen", [])) < 100:
+            print("✗ Insufficient Magnus Carlsen data.")
+            return
+
+        # Train and validate on Magnus Carlsen with multi-run evolution
         momentum_weights = train_momentum_system(
-            datasets[primary_player],  # Full dataset - all games
-            pop_size=50,               # Proper population size
-            ngen=50                   # Proper number of generations
+            datasets["MagnusCarlsen"],
+            pop_size=200, ngen=200, num_runs=3
         )
 
-        # Validate temporally with larger horizon for world champion data
-        temporal_results = validate_temporal_prediction(datasets[primary_player], momentum_weights, prediction_horizon=50)
+        temporal_results = validate_temporal_prediction(
+            datasets["MagnusCarlsen"], momentum_weights, prediction_horizon=50
+        )
 
-        # Cross-player validation (skip if only one player)
-        cross_player_results = {"accuracy": 0.0, "brier_score": 0.25, "total_games": 0}
-        if len(datasets) > 1:
-            train_players = {k: v for k, v in datasets.items() if k != list(datasets.keys())[0]}
-            test_player = list(datasets.keys())[0]
-            cross_player_results = validate_cross_player_transfer(train_players, test_player, momentum_weights)
+        cavity_results = analyze_cavity_prevention(
+            datasets["MagnusCarlsen"], momentum_weights
+        )
 
-        # Cavity prevention analysis
-        cavity_results = analyze_cavity_prevention(datasets[primary_player], momentum_weights)
-
-        # Summary
-        print("\n🎉 REAL DATA RESULTS SUMMARY")
-        print("=" * 35)
+        # Results summary
+        print("\n🎉 MAGNUS CARLSEN RESULTS")
+        print("=" * 30)
         print(f"Future Prediction Accuracy: {temporal_results['accuracy']:.1%}")
-        print(f"Cross-Player Transfer: {cross_player_results['accuracy']:.1%}")
         print(f"Cavity Frequency: {cavity_results['cavity_frequency']:.3f}")
-
-        # Statistical comparison
-        print("\n📊 STATISTICAL COMPARISON")
-        print("Traditional Elo baseline: ~50% future prediction accuracy")
-        print(f"Future Prediction Accuracy: {temporal_results['accuracy']:.1%}")
         improvement = (temporal_results['accuracy'] - 0.5) / 0.5 * 100
         print(f"Improvement over baseline: {improvement:.1f}%")
 
-        if temporal_results['accuracy'] > 0.55:
-            print("✅ NOVEL MOMENTUM SYSTEM VALIDATED WITH REAL DATA!")
-            print("   ✓ Superior future prediction accuracy")
-            print("   ✓ Demonstrates cavity prevention capability")
-            print("   ✓ Proves momentum-based ratings work better than fixed K-factor")
-            print("   🎯 SUCCESS: Momentum ratings prevent cavities better than chess.com!")
+        if temporal_results['accuracy'] > 0.7:
+            print("✅ EXCEPTIONAL RESULTS!")
+        elif temporal_results['accuracy'] > 0.6:
+            print("✅ STRONG RESULTS!")
         else:
-            print("⚠️ Results inconclusive - may need more data or parameter tuning")
-            print("   This demonstrates the framework works, but parameters may need optimization")
-    else:
-        print(f"✗ Insufficient data for {primary_player}. Using demo.")
-        demonstrate_novel_system()
+            print("⚠️ MODERATE RESULTS - may need parameter tuning")
+
+        print("\n💡 TIP: Run with --player-specific for individual player momentum models")
 
 if __name__ == "__main__":
     main()

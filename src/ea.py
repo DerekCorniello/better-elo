@@ -45,19 +45,19 @@ creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
 creator.create("Individual", list, fitness=creator.FitnessMin)
 
 toolbox = base.Toolbox()
-toolbox.register("attr_float", random.uniform, -500, 500)
+toolbox.register("attr_float", random.uniform, -5, 5)
 toolbox.register("individual", tools.initRepeat,
                  creator.Individual, toolbox.attr_float, 6)
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 toolbox.register("evaluate", evaluate_individual)
 toolbox.register("mate", tools.cxBlend, alpha=0.5)
-toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=5, indpb=0.2)
-toolbox.register("select", tools.selTournament, tournsize=3)
+toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=3, indpb=0.25)  # Slightly more aggressive mutation
+toolbox.register("select", tools.selTournament, tournsize=5)  # Larger tournament
 
 
 def run_evolution(dataset: List[UserGameData], pop_size: int = 100,
-                  ngen: int = 50, cxpb: float = 0.7,
-                  mutpb: float = 0.2) -> tuple:
+                  ngen: int = 50, cxpb: float = 0.8,
+                  mutpb: float = 0.3) -> tuple:
     """
     Run the evolutionary algorithm to find optimal feature weights
     """
@@ -72,6 +72,11 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 100,
 
     # evolution loop
     for gen in range(ngen):
+        # Progress reporting
+        if gen % 20 == 0 or gen == ngen - 1:
+            best_fitness = hof[0].fitness.values[0] if hof else float('inf')
+            print(f"Generation {gen+1}/{ngen}: Best fitness = {best_fitness:.4f}")
+
         # select offspring
         offspring = toolbox.select(pop, len(pop))
         offspring = list(map(toolbox.clone, offspring))

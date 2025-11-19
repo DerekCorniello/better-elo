@@ -73,6 +73,14 @@ class RealDataGenerator:
             else:
                 opponent_elo = game['white']['rating']
 
+            # Determine actual result correctly
+            if user_result == 'win':
+                actual_result = 1.0  # Player won
+            elif user_result in ['resigned', 'checkmated', 'timeout', 'abandoned']:
+                actual_result = 0.0  # Player lost
+            else:
+                actual_result = 0.5  # Draw or other result
+
             user_game = UserGameData(
                 username=self.username,
                 pre_game_elo=pre_rating,
@@ -81,7 +89,7 @@ class RealDataGenerator:
                 end_time=game['end_time'],  # for sorting
                 velocity=velocity,
                 opponent_elo=opponent_elo,
-                actual_result=1.0 if user_result in ['win', 'resigned', 'checkmated'] else (0.0 if user_result in ['resigned', 'checkmated'] else 0.5)
+                actual_result=actual_result
             )
 
             user_games.append(user_game)
