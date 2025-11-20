@@ -17,88 +17,63 @@ def predict_momentum_adjustment(weights, features: list) -> float:
                      for i in range(len(features))))
 
 
+def calculate_momentum_prediction(game, momentum_weights):
+    """
+    Calculate momentum-enhanced prediction for a single game
+    """
+    # Traditional Elo prediction
+    elo_expected = 1 / (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+    
+    # Momentum adjustment
+    features = game.to_feature_vector()
+    momentum_adjustment = sum(w * f for w, f in zip(momentum_weights, features))
+    momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
+    
+    # Enhanced prediction
+    enhanced_prob = elo_expected + momentum_adjustment
+    enhanced_prob = max(0.01, min(0.99, enhanced_prob))
+    
+    return enhanced_prob
+
+
 def evaluate_individual(individual: list,
                          dataset: List[UserGameData]) -> tuple:
     """
-    Evaluate fitness of an individual using momentum-enhanced Elo predictions
+    Evaluate fitness by direct comparison: Momentum system vs traditional Elo
+    Optimizes for better matchmaking through improved prediction accuracy
     """
-    import math
-    total_error = 0.0
-    total = len(dataset)
+    momentum_correct = 0
+    elo_correct = 0
+    total_games = len(dataset)
+    
     for game in dataset:
-        # Calculate traditional Elo prediction
-        elo_expected = 1 / (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+        # Calculate momentum prediction
+        momentum_prob = calculate_momentum_prediction(game, individual)
+        momentum_win = 1 if momentum_prob > 0.5 else 0
         
-        # Calculate momentum adjustment (small adjustment to Elo)
-        features = game.to_feature_vector()
-        momentum_adjustment = sum(w * f for w, f in zip(individual, features))
+        # Calculate Elo prediction
+        elo_prob = 1 / (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+        elo_win = 1 if elo_prob > 0.5 else 0
         
-        # Limit momentum adjustment to reasonable range (-0.2 to +0.2)
-        momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
+        # Determine actual result
+        actual_win = 1 if game.actual_result > 0.5 else 0
         
-        # Enhanced prediction: Elo + momentum adjustment
-        enhanced_prob = elo_expected + momentum_adjustment
-        
-        # Ensure probability stays in valid range [0, 1]
-        enhanced_prob = max(0.01, min(0.99, enhanced_prob))
-        
-        actual_result = game.actual_result
-        error = (enhanced_prob - actual_result) ** 2
-        total_error += error
-    mse = total_error / total if total > 0 else 0.0
+        # Count correct predictions
+        if momentum_win == actual_win:
+            momentum_correct += 1
+        if elo_win == actual_win:
+            elo_correct += 1
     
-    # Calculate Brier score for calibration
-    brier_score = total_error / total if total > 0 else 0.0
+    # Calculate accuracies
+    momentum_accuracy = momentum_correct / total_games
+    elo_accuracy = elo_correct / total_games
     
-    # Calculate cavity metrics inline to avoid circular import
-    cavities = []
-    for i in range(20, len(dataset)):  # Need 20 games history
-        # Calculate recent actual performance
-        recent_games = dataset[i-20:i]
-        actual_win_rate = sum(g.actual_result for g in recent_games) / 20
-        
-        # Get expected performance from momentum system
-        current_game = dataset[i]
-        elo_expected = 1 / (1 + 10 ** ((current_game.opponent_elo - current_game.pre_game_elo) / 400))
-        features = current_game.to_feature_vector()
-        momentum_adjustment = sum(w * f for w, f in zip(individual, features))
-        momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
-        expected_win_rate = elo_expected + momentum_adjustment
-        expected_win_rate = max(0.01, min(0.99, expected_win_rate))
-        
-        # Detect cavity
-        performance_gap = abs(actual_win_rate - expected_win_rate)
-        if performance_gap > 0.20:  # 20% threshold (relaxed)
-            cavities.append({
-                'game_index': i,
-                'performance_gap': performance_gap,
-                'actual_rate': actual_win_rate,
-                'expected_rate': expected_win_rate
-            })
+    # Add stronger L2 regularization penalty for large weights
+    regularization = 0.01 * sum(w**2 for w in individual)  # 10x stronger
     
-    # Calculate cavity penalty
-    cavity_frequency = len(cavities) / len(dataset) if dataset else 0
-    avg_duration = 1.0 if cavities else 0.0  # Simplified for now
-    max_gap = max([c['performance_gap'] for c in cavities], default=0)
-    
-    cavity_penalty = (
-        0.2 * cavity_frequency +           # Frequency penalty (reduced)
-        0.1 * avg_duration +                # Duration penalty (reduced)
-        0.1 * max_gap                      # Severity penalty (reduced)
-    )
-    
-    # Add L2 regularization penalty for large weights
-    regularization = 0.001 * sum(w**2 for w in individual)
-    
-    # Multi-objective weighted fitness
-    fitness = (
-        0.6 * mse +           # Primary: prediction accuracy (increased)
-        0.2 * brier_score +   # Secondary: calibration
-        0.15 * cavity_penalty + # Tertiary: cavity prevention (reduced)
-        0.05 * regularization  # Regularization: simplicity (reduced)
-    )
-    
-    return (fitness,)
+    # Fitness: Direct improvement over Elo (negative for DEAP minimization)
+    improvement = momentum_accuracy - elo_accuracy
+    return (-improvement,)
 
 
 # using that deap package i found
@@ -113,7 +88,7 @@ toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 toolbox.register("evaluate", evaluate_individual)
 toolbox.register("mate", tools.cxBlend, alpha=0.5)
 toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=3, indpb=0.3)  # Higher mutation rate with elitism
-toolbox.register("select", tools.selTournament, tournsize=15)  # Stronger selection pressure
+toolbox.register("select", tools.selTournament, tournsize=25)  # Much stronger selection pressure
 
 
 def run_evolution(dataset: List[UserGameData], pop_size: int = 800,
@@ -123,8 +98,8 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 800,
     Run the evolutionary algorithm to find optimal feature weights
     """
     pop = toolbox.population(n=pop_size)
-    # Elitism: retain top 10% of population
-    hof = tools.HallOfFame(int(pop_size * 0.1))
+    # Elitism: retain top 5% of population (stronger elitism)
+    hof = tools.HallOfFame(int(pop_size * 0.05))
     fitnesses = list(map(lambda ind: toolbox.evaluate(ind, dataset), pop))
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
@@ -169,7 +144,7 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 800,
 
         # Adaptive mutation: decrease sigma and rate over generations for exploration to exploitation
         sigma = 3 * (0.1 + 0.9 * (ngen - gen) / ngen)
-        adaptive_mutpb = mutpb * (0.3 + 0.7 * (ngen - gen) / ngen)  # Start high, end low
+        adaptive_mutpb = mutpb * (0.2 + 0.3 * (ngen - gen) / ngen)  # Start lower, end lower
         toolbox.unregister("mutate")
         toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=sigma, indpb=adaptive_mutpb)
 

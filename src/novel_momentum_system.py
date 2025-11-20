@@ -357,6 +357,57 @@ def calculate_cavity_metrics(momentum_weights: list, game_history: List[Any]) ->
     }
 
 
+def evaluate_direct_comparison(test_games: List[Any], weights: list) -> Dict[str, Any]:
+    """
+    Direct comparison: Momentum system vs traditional Elo
+    Returns clear improvement metrics for matchmaking
+    """
+    if not test_games:
+        return {'momentum_accuracy': 0.0, 'elo_accuracy': 0.0, 'improvement': 0.0, 'total_games': 0}
+    
+    momentum_correct = 0
+    elo_correct = 0
+    total_games = len(test_games)
+    
+    for game in test_games:
+        # Calculate momentum prediction
+        elo_expected = 1 / (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+        features = game.to_feature_vector()
+        momentum_adjustment = sum(w * f for w, f in zip(weights, features))
+        momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
+        enhanced_prob = elo_expected + momentum_adjustment
+        enhanced_prob = max(0.01, min(0.99, enhanced_prob))
+        
+        # Calculate Elo prediction
+        elo_prob = elo_expected
+        
+        # Binary predictions
+        momentum_win = 1 if enhanced_prob > 0.5 else 0
+        elo_win = 1 if elo_prob > 0.5 else 0
+        actual_win = 1 if game.actual_result > 0.5 else 0
+        
+        # Count correct predictions
+        if momentum_win == actual_win:
+            momentum_correct += 1
+        if elo_win == actual_win:
+            elo_correct += 1
+    
+    # Calculate accuracies and improvement
+    momentum_accuracy = momentum_correct / total_games
+    elo_accuracy = elo_correct / total_games
+    improvement = momentum_accuracy - elo_accuracy
+    
+    return {
+        'momentum_accuracy': float(momentum_accuracy),
+        'elo_accuracy': float(elo_accuracy),
+        'improvement': float(improvement),
+        'relative_improvement': float((improvement / elo_accuracy * 100) if elo_accuracy > 0 else 0),
+        'total_games': float(total_games),
+        'momentum_correct': float(momentum_correct),
+        'elo_correct': float(elo_correct)
+    }
+
+
 class NovelTemporalValidator:
     """Advanced temporal validation for true future prediction"""
     
