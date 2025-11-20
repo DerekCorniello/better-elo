@@ -262,6 +262,15 @@ def run_player_specific_validation() -> dict:
         player_games = datasets[player]
         print(f"Dataset: {len(player_games)} games")
 
+        # Apply K-factor Elo adjustment to approximate pre-game opponent Elo
+        for game in player_games:
+            if game.actual_result != 0.5:  # Only for decisive games
+                expected = 1 / (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+                actual = game.actual_result
+                K = 20
+                delta = K * (expected - actual)
+                game.opponent_elo -= delta
+
         # Train player-specific momentum model with multi-run evolution
         momentum_weights = train_momentum_system(
             player_games, pop_size=300, ngen=200, num_runs=3
@@ -462,7 +471,9 @@ def main():
 
             # Show aggregate results
             if aggregated and 'mean_accuracy' in aggregated:
+                accuracies = [data['future_accuracy'] for data in results.values()]
                 print(f"\nAGGREGATE RESULTS:")
+                print(f"Individual Accuracies: {accuracies}")
                 print(f"Mean Accuracy: {aggregated['mean_accuracy']:.1%} (±{aggregated['std_accuracy']:.1%})")
                 print(".1f")
 

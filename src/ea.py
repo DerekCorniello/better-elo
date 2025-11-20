@@ -20,34 +20,19 @@ def predict_momentum_adjustment(weights, features: list) -> float:
 def evaluate_individual(individual: list,
                          dataset: List[UserGameData]) -> tuple:
     """
-    Evaluate fitness of an individual on the dataset using momentum system prediction accuracy
+    Evaluate fitness of an individual on the dataset (MSE for Elo prediction)
     """
-    from novel_momentum_system import NovelMomentumSystem
-
     total_error = 0.0
     total = len(dataset)
-    momentum_system = NovelMomentumSystem()
-    momentum_system.momentum_weights = individual
-
     for game in dataset:
-        # Ensure player exists, initialize with actual pre-game Elo
-        if game.username not in momentum_system.players:
-            momentum_system.add_player(game.username, game.pre_game_elo)
-
-        player = momentum_system.players[game.username]
-
-        # Predict win probability using current momentum rating
-        predicted_prob = player.calculate_win_probability(game.opponent_elo)
-        actual_result = game.actual_result
-        error = (predicted_prob - actual_result) ** 2
+        adjustment = predict_momentum_adjustment(
+            individual, game.to_feature_vector())
+        predicted_adjusted_elo = game.pre_game_elo + adjustment
+        actual_elo = game.post_game_elo
+        error = (predicted_adjusted_elo - actual_elo) ** 2
         total_error += error
-
-        # Update rating after the game
-        momentum_system.update_after_game(
-            game.username, "opponent", actual_result,
-            game.to_feature_vector(), individual
-        )
-
+        # store adjustment for interpretation
+        game.momentum_adjustment = adjustment
     mse = total_error / total if total > 0 else 0.0
     # Add L2 regularization penalty for large weights
     regularization = 0.001 * sum(w**2 for w in individual)
