@@ -149,19 +149,23 @@ class NovelMomentumSystem:
         brier_score = 0.0
         
         for game in test_games:
-            # Predict outcome using current ratings
-            p1_prob, p2_prob = self.predict_game_outcome(game.username, "opponent")
-            
+            # Predict outcome using current player rating vs actual opponent Elo
+            player = self.players.get(game.username)
+            if player:
+                p1_prob = player.calculate_win_probability(game.opponent_elo)
+            else:
+                p1_prob = 0.5
+
             # Determine actual outcome
             actual_result = game.actual_result
-            
+
             # Binary prediction
             predicted_win = 1 if p1_prob > 0.5 else 0
             actual_win = 1 if actual_result > 0.5 else 0
-            
+
             if predicted_win == actual_win:
                 correct_predictions += 1
-            
+
             # Brier score
             brier_score += (p1_prob - actual_result) ** 2
         

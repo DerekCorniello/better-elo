@@ -81,6 +81,13 @@ class RealDataGenerator:
             else:
                 actual_result = 0.5  # Draw or other result
 
+            # Adjust opponent Elo to approximate pre-game rating
+            if actual_result == 1.0:
+                opponent_elo -= 7  # Opponent was weaker, pre-game Elo lower
+            elif actual_result == 0.0:
+                opponent_elo += 7  # Opponent was stronger, pre-game Elo higher
+            # For draws, no adjustment
+
             user_game = UserGameData(
                 username=self.username,
                 pre_game_elo=pre_rating,

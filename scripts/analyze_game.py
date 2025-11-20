@@ -48,8 +48,8 @@ def analyze_game(pgn_text, username=None):
     stockfish = Stockfish(
         path='/usr/bin/stockfish',
         parameters={
-            "Threads": 8,
-            "Hash": 8096,
+            "Threads": 12,
+            "Hash": 12288,  # 12GB RAM
             "Contempt": 0,
         }
     )
@@ -71,45 +71,45 @@ def analyze_game(pgn_text, username=None):
 
     board = pgn.board()
     losses = []
+    move_count = 0
 
     for move in pgn.mainline_moves():
         player_color = board.turn
         # only analyze moves for the target user
-        if player_color != user_color:
-            continue
+        if player_color == user_color:
+            # evaluate best move line
+            stockfish.set_fen_position(board.fen())
+            best_move = stockfish.get_best_move()
 
-        # evaluate best move line
-        stockfish.set_fen_position(board.fen())
-        best_move = stockfish.get_best_move()
+            if best_move:
+                # eval after best move
+                stockfish.make_moves_from_current_position([best_move])
+                best_after = stockfish.get_evaluation()
 
-        if not best_move:
-            board.push(move)
-            continue
+                # evaluate the move taken
+                board.push(move)
+                stockfish.set_fen_position(board.fen())
+                your_after = stockfish.get_evaluation()
 
-        # eval after best move
-        stockfish.make_moves_from_current_position([best_move])
-        best_after = stockfish.get_evaluation()
+                # the best measure of accuracy is centipawn loss:
+                # https://www.chess.com/blog/raync910/average-centipawn-loss-chess-acpl
+                best_cp = normalize_eval(
+                    best_after, side_to_move_is_white=(user_color == chess.WHITE))
+                your_cp = normalize_eval(
+                    your_after, side_to_move_is_white=(user_color == chess.WHITE))
 
-        # evaluate the move taken
-        board.push(move)
-        stockfish.set_fen_position(board.fen())
-        your_after = stockfish.get_evaluation()
+                # from white's pov, higher cp is better
+                # from black's pov, we flip the sign to keep things consistent
+                if user_color == chess.WHITE:
+                    loss = best_cp - your_cp
+                else:
+                    loss = your_cp - best_cp
 
-        # the best measure of accuracy is centipawn loss:
-        # https://www.chess.com/blog/raync910/average-centipawn-loss-chess-acpl
-        best_cp = normalize_eval(
-            best_after, side_to_move_is_white=(user_color == chess.WHITE))
-        your_cp = normalize_eval(
-            your_after, side_to_move_is_white=(user_color == chess.WHITE))
-
-        # from white's pov, higher cp is better
-        # from black's pov, we flip the sign to keep things consistent
-        if user_color == chess.WHITE:
-            loss = best_cp - your_cp
+                losses.append(loss)
+            else:
+                board.push(move)
         else:
-            loss = your_cp - best_cp
-
-        losses.append(loss)
+            board.push(move)
 
     # compute accuracies: % of moves with |loss| < 50 cp
     # this is a standard measurement, if it loses less than 50 cp,

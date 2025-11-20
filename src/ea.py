@@ -18,24 +18,39 @@ def predict_momentum_adjustment(weights, features: list) -> float:
 
 
 def evaluate_individual(individual: list,
-                        dataset: List[UserGameData]) -> tuple:
+                         dataset: List[UserGameData]) -> tuple:
     """
-    Evaluate fitness of an individual on the dataset (MSE for regression)
+    Evaluate fitness of an individual on the dataset using momentum system prediction accuracy
     """
+    from novel_momentum_system import NovelMomentumSystem
+
     total_error = 0.0
     total = len(dataset)
+    momentum_system = NovelMomentumSystem()
+    momentum_system.momentum_weights = individual
+
     for game in dataset:
-        adjustment = predict_momentum_adjustment(
-            individual, game.to_feature_vector())
-        predicted_adjusted_elo = game.pre_game_elo + adjustment
-        actual_elo = game.post_game_elo
-        error = (predicted_adjusted_elo - actual_elo) ** 2
+        # Ensure player exists, initialize with actual pre-game Elo
+        if game.username not in momentum_system.players:
+            momentum_system.add_player(game.username, game.pre_game_elo)
+
+        player = momentum_system.players[game.username]
+
+        # Predict win probability using current momentum rating
+        predicted_prob = player.calculate_win_probability(game.opponent_elo)
+        actual_result = game.actual_result
+        error = (predicted_prob - actual_result) ** 2
         total_error += error
-        # store adjustment for interpretation
-        game.momentum_adjustment = adjustment
+
+        # Update rating after the game
+        momentum_system.update_after_game(
+            game.username, "opponent", actual_result,
+            game.to_feature_vector(), individual
+        )
+
     mse = total_error / total if total > 0 else 0.0
-    # Add regularization penalty for large weights
-    regularization = 0.01 * sum(abs(w) for w in individual)
+    # Add L2 regularization penalty for large weights
+    regularization = 0.001 * sum(w**2 for w in individual)
     fitness = mse + regularization
     return (fitness,)
 
@@ -51,8 +66,8 @@ toolbox.register("individual", tools.initRepeat,
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 toolbox.register("evaluate", evaluate_individual)
 toolbox.register("mate", tools.cxBlend, alpha=0.5)
-toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=3, indpb=0.25)  # Slightly more aggressive mutation
-toolbox.register("select", tools.selTournament, tournsize=5)  # Larger tournament
+toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=3, indpb=0.3)  # Higher mutation rate with elitism
+toolbox.register("select", tools.selTournament, tournsize=7)  # Larger tournament
 
 
 def run_evolution(dataset: List[UserGameData], pop_size: int = 100,
@@ -62,8 +77,8 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 100,
     Run the evolutionary algorithm to find optimal feature weights
     """
     pop = toolbox.population(n=pop_size)
-    # this is their elitism
-    hof = tools.HallOfFame(1)
+    # Elitism: retain top 10% of population
+    hof = tools.HallOfFame(int(pop_size * 0.1))
     fitnesses = list(map(lambda ind: toolbox.evaluate(ind, dataset), pop))
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
@@ -77,32 +92,30 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 100,
             best_fitness = hof[0].fitness.values[0] if hof else float('inf')
             print(f"Generation {gen+1}/{ngen}: Best fitness = {best_fitness:.4f}")
 
-        # select offspring
-        offspring = toolbox.select(pop, len(pop))
+        # select offspring (elitism: keep best individuals)
+        offspring = toolbox.select(pop, len(pop) - len(hof))
         offspring = list(map(toolbox.clone, offspring))
+        offspring.extend(toolbox.clone(ind) for ind in hof)  # add elite individuals
 
         # apply crossover
         for child1, child2 in zip(offspring[::2], offspring[1::2]):
             if random.random() < cxpb:
                 toolbox.mate(child1, child2)
-                # TODO: since we removed the enforce_bounds func
-                # idk if we stil need any of this or what...
-                # Enforce bounds after crossover
-                # child1[:] = enforce_bounds(child1)
-                # child2[:] = enforce_bounds(child2)
                 del child1.fitness.values
                 del child2.fitness.values
+
+        # Adaptive mutation: decrease sigma over generations for exploration to exploitation
+        sigma = 3 * (0.1 + 0.9 * (ngen - gen) / ngen)
+        toolbox.unregister("mutate")
+        toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=sigma, indpb=0.3)
 
         # Apply mutation
         for mutant in offspring:
             if random.random() < mutpb:
                 toolbox.mutate(mutant)
-                # TODO: same as above
-                # Enforce bounds after mutation
-                # mutant[:] = enforce_bounds(mutant)
                 del mutant.fitness.values
 
-        # TODO: what does this do? idk what invalid means in this case
+        # Evaluate invalid individuals
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
         fitnesses = list(
             map(lambda ind: toolbox.evaluate(ind, dataset), invalid_ind))
