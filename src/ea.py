@@ -46,9 +46,58 @@ def evaluate_individual(individual: list,
         error = (enhanced_prob - actual_result) ** 2
         total_error += error
     mse = total_error / total if total > 0 else 0.0
+    
+    # Calculate Brier score for calibration
+    brier_score = total_error / total if total > 0 else 0.0
+    
+    # Calculate cavity metrics inline to avoid circular import
+    cavities = []
+    for i in range(20, len(dataset)):  # Need 20 games history
+        # Calculate recent actual performance
+        recent_games = dataset[i-20:i]
+        actual_win_rate = sum(g.actual_result for g in recent_games) / 20
+        
+        # Get expected performance from momentum system
+        current_game = dataset[i]
+        elo_expected = 1 / (1 + 10 ** ((current_game.opponent_elo - current_game.pre_game_elo) / 400))
+        features = current_game.to_feature_vector()
+        momentum_adjustment = sum(w * f for w, f in zip(individual, features))
+        momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
+        expected_win_rate = elo_expected + momentum_adjustment
+        expected_win_rate = max(0.01, min(0.99, expected_win_rate))
+        
+        # Detect cavity
+        performance_gap = abs(actual_win_rate - expected_win_rate)
+        if performance_gap > 0.20:  # 20% threshold (relaxed)
+            cavities.append({
+                'game_index': i,
+                'performance_gap': performance_gap,
+                'actual_rate': actual_win_rate,
+                'expected_rate': expected_win_rate
+            })
+    
+    # Calculate cavity penalty
+    cavity_frequency = len(cavities) / len(dataset) if dataset else 0
+    avg_duration = 1.0 if cavities else 0.0  # Simplified for now
+    max_gap = max([c['performance_gap'] for c in cavities], default=0)
+    
+    cavity_penalty = (
+        0.2 * cavity_frequency +           # Frequency penalty (reduced)
+        0.1 * avg_duration +                # Duration penalty (reduced)
+        0.1 * max_gap                      # Severity penalty (reduced)
+    )
+    
     # Add L2 regularization penalty for large weights
     regularization = 0.001 * sum(w**2 for w in individual)
-    fitness = mse + regularization
+    
+    # Multi-objective weighted fitness
+    fitness = (
+        0.6 * mse +           # Primary: prediction accuracy (increased)
+        0.2 * brier_score +   # Secondary: calibration
+        0.15 * cavity_penalty + # Tertiary: cavity prevention (reduced)
+        0.05 * regularization  # Regularization: simplicity (reduced)
+    )
+    
     return (fitness,)
 
 
@@ -64,11 +113,11 @@ toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 toolbox.register("evaluate", evaluate_individual)
 toolbox.register("mate", tools.cxBlend, alpha=0.5)
 toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=3, indpb=0.3)  # Higher mutation rate with elitism
-toolbox.register("select", tools.selTournament, tournsize=7)  # Larger tournament
+toolbox.register("select", tools.selTournament, tournsize=15)  # Stronger selection pressure
 
 
-def run_evolution(dataset: List[UserGameData], pop_size: int = 100,
-                  ngen: int = 50, cxpb: float = 0.8,
+def run_evolution(dataset: List[UserGameData], pop_size: int = 800,
+                  ngen: int = 1000, cxpb: float = 0.8,
                   mutpb: float = 0.3) -> tuple:
     """
     Run the evolutionary algorithm to find optimal feature weights
@@ -118,10 +167,11 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 100,
                 del child1.fitness.values
                 del child2.fitness.values
 
-        # Adaptive mutation: decrease sigma over generations for exploration to exploitation
+        # Adaptive mutation: decrease sigma and rate over generations for exploration to exploitation
         sigma = 3 * (0.1 + 0.9 * (ngen - gen) / ngen)
+        adaptive_mutpb = mutpb * (0.3 + 0.7 * (ngen - gen) / ngen)  # Start high, end low
         toolbox.unregister("mutate")
-        toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=sigma, indpb=0.3)
+        toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=sigma, indpb=adaptive_mutpb)
 
         # Apply mutation
         for mutant in offspring:

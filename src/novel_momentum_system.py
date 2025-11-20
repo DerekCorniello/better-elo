@@ -273,6 +273,90 @@ def evaluate_future_prediction_accuracy(test_games: List[Any], weights: list) ->
     }
 
 
+def detect_cavities(momentum_weights: list, game_history: List[Any], threshold: float = 0.15) -> List[dict]:
+    """
+    Detect when player's recent performance significantly differs 
+    from their momentum-enhanced rating prediction
+    """
+    cavities = []
+    
+    for i in range(20, len(game_history)):  # Need 20 games history
+        # Calculate recent actual performance
+        recent_games = game_history[i-20:i]
+        actual_win_rate = sum(g.actual_result for g in recent_games) / 20
+        
+        # Get expected performance from momentum system
+        current_game = game_history[i]
+        
+        # Calculate momentum-enhanced prediction
+        elo_expected = 1 / (1 + 10 ** ((current_game.opponent_elo - current_game.pre_game_elo) / 400))
+        features = current_game.to_feature_vector()
+        momentum_adjustment = sum(w * f for w, f in zip(momentum_weights, features))
+        momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
+        expected_win_rate = elo_expected + momentum_adjustment
+        expected_win_rate = max(0.01, min(0.99, expected_win_rate))
+        
+        # Detect cavity
+        performance_gap = abs(actual_win_rate - expected_win_rate)
+        if performance_gap > threshold:
+            cavities.append({
+                'game_index': i,
+                'performance_gap': performance_gap,
+                'actual_rate': actual_win_rate,
+                'expected_rate': expected_win_rate,
+                'type': 'underrated' if actual_win_rate > expected_win_rate else 'overrated'
+            })
+    
+    return cavities
+
+
+def calculate_cavity_metrics(momentum_weights: list, game_history: List[Any]) -> dict:
+    """
+    Calculate comprehensive cavity metrics for fitness evaluation
+    """
+    cavities = detect_cavities(momentum_weights, game_history)
+    
+    if not cavities:
+        return {
+            'frequency': 0.0,
+            'avg_duration': 0.0,
+            'max_gap': 0.0,
+            'total_episodes': 0
+        }
+    
+    # Calculate cavity duration (consecutive cavity games)
+    cavity_episodes = []
+    current_episode = []
+    
+    for i, cavity in enumerate(cavities):
+        if i == 0 or cavity['game_index'] != cavities[i-1]['game_index'] + 1:
+            # New cavity episode
+            if current_episode:
+                cavity_episodes.append(current_episode)
+            current_episode = [cavity]
+        else:
+            # Continuation of current episode
+            current_episode.append(cavity)
+    
+    # Add final episode
+    if current_episode:
+        cavity_episodes.append(current_episode)
+    
+    # Calculate metrics
+    total_games = len(game_history)
+    cavity_frequency = len(cavities) / total_games
+    avg_duration = sum(len(episode) for episode in cavity_episodes) / len(cavity_episodes) if cavity_episodes else 0
+    max_gap = max(cavity['performance_gap'] for cavity in cavities)
+    
+    return {
+        'frequency': cavity_frequency,
+        'avg_duration': avg_duration,
+        'max_gap': max_gap,
+        'total_episodes': len(cavity_episodes),
+        'cavities': cavities
+    }
+
+
 class NovelTemporalValidator:
     """Advanced temporal validation for true future prediction"""
     

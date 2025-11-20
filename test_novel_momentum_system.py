@@ -240,9 +240,9 @@ def run_player_specific_validation() -> dict:
     print("=" * 55)
     print("Training individual momentum models for each player")
     print("Each model optimized for that player's unique momentum patterns")
-    print("⚠️  WARNING: This will take considerable time (45-90 min) with intensive parameters!")
-    print("   Population: 300, Generations: 1000 (with early convergence), Runs: 3 per player")
-    print("   Total evolutionary evaluations per player: 300 × 1000 × 3 = 900,000")
+    print("⚠️  WARNING: This will take considerable time (20-40 min) with test parameters!")
+    print("   Population: 400, Generations: 100 (with early convergence), Runs: 3 per player")
+    print("   Total evolutionary evaluations per player: 400 × 100 × 3 = 120,000")
 
     # Target players for individual model training (testing stronger regularization on Magnus first)
     players = ["MagnusCarlsen"]
@@ -279,7 +279,7 @@ def run_player_specific_validation() -> dict:
 
         # Train player-specific momentum model with multi-run evolution
         momentum_weights = train_momentum_system(
-            train_data, pop_size=300, ngen=1000, num_runs=3
+            train_data, pop_size=400, ngen=100, num_runs=3
         )
 
         # Validate on player's future games
