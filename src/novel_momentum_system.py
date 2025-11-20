@@ -142,41 +142,45 @@ class NovelMomentumSystem:
         p2_result = 1.0 - player1_result  # Two-player zero-sum
         p2.update_rating(p1.momentum_rating, p2_result, player2_features, self.momentum_weights)
     
-    def evaluate_future_prediction_accuracy(self, test_games: List[Any]) -> Dict[str, float]:
-        """Evaluate how well system predicts future game outcomes"""
-        correct_predictions = 0
-        total_games = len(test_games)
-        brier_score = 0.0
-        
-        for game in test_games:
-            # Predict outcome using current player rating vs actual opponent Elo
-            player = self.players.get(game.username)
-            if player:
-                p1_prob = player.calculate_win_probability(game.opponent_elo)
-            else:
-                p1_prob = 0.5
 
-            # Determine actual outcome
-            actual_result = game.actual_result
 
-            # Binary prediction
-            predicted_win = 1 if p1_prob > 0.5 else 0
-            actual_win = 1 if actual_result > 0.5 else 0
 
-            if predicted_win == actual_win:
-                correct_predictions += 1
+def evaluate_future_prediction_accuracy(test_games: List[Any], weights: list) -> Dict[str, float]:
+    """Evaluate prediction accuracy using Elo-independent direct outcome prediction"""
+    import math
+    correct_predictions = 0
+    total_games = len(test_games)
+    brier_score = 0.0
 
-            # Brier score
-            brier_score += (p1_prob - actual_result) ** 2
-        
-        accuracy = correct_predictions / total_games if total_games > 0 else 0.0
-        brier_score = brier_score / total_games if total_games > 0 else 0.0
-        
-        return {
-            'accuracy': accuracy,
-            'brier_score': brier_score,
-            'total_games': total_games
-        }
+    for game in test_games:
+        # Predict outcome using direct sigmoid model
+        features = game.to_feature_vector()
+        linear = sum(w * f for w, f in zip(weights, features))
+        # Clip to prevent overflow
+        linear = max(-500, min(500, linear))
+        p1_prob = 1 / (1 + math.exp(-linear))
+
+        # Determine actual outcome
+        actual_result = game.actual_result
+
+        # Binary prediction
+        predicted_win = 1 if p1_prob > 0.5 else 0
+        actual_win = 1 if actual_result > 0.5 else 0
+
+        if predicted_win == actual_win:
+            correct_predictions += 1
+
+        # Brier score
+        brier_score += (p1_prob - actual_result) ** 2
+
+    accuracy = correct_predictions / total_games if total_games > 0 else 0.0
+    brier_score = brier_score / total_games if total_games > 0 else 0.0
+
+    return {
+        'accuracy': accuracy,
+        'brier_score': brier_score,
+        'total_games': total_games,
+    }
 
 
 class NovelTemporalValidator:

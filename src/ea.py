@@ -20,19 +20,20 @@ def predict_momentum_adjustment(weights, features: list) -> float:
 def evaluate_individual(individual: list,
                          dataset: List[UserGameData]) -> tuple:
     """
-    Evaluate fitness of an individual on the dataset (MSE for Elo prediction)
+    Evaluate fitness of an individual using Elo-independent outcome prediction
     """
+    import math
     total_error = 0.0
     total = len(dataset)
     for game in dataset:
-        adjustment = predict_momentum_adjustment(
-            individual, game.to_feature_vector())
-        predicted_adjusted_elo = game.pre_game_elo + adjustment
-        actual_elo = game.post_game_elo
-        error = (predicted_adjusted_elo - actual_elo) ** 2
+        features = game.to_feature_vector()
+        linear = sum(w * f for w, f in zip(individual, features))
+        # Clip to prevent overflow
+        linear = max(-500, min(500, linear))
+        predicted_prob = 1 / (1 + math.exp(-linear))
+        actual_result = game.actual_result
+        error = (predicted_prob - actual_result) ** 2
         total_error += error
-        # store adjustment for interpretation
-        game.momentum_adjustment = adjustment
     mse = total_error / total if total > 0 else 0.0
     # Add L2 regularization penalty for large weights
     regularization = 0.001 * sum(w**2 for w in individual)

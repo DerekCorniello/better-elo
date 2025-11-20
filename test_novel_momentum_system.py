@@ -16,7 +16,7 @@ src_dir = os.path.join(current_dir, 'src')
 sys.path.insert(0, src_dir)
 
 # Import components directly - no fallbacks
-from novel_momentum_system import NovelMomentumSystem, NovelMomentumRating, NovelTemporalValidator
+from novel_momentum_system import NovelMomentumSystem, evaluate_future_prediction_accuracy, NovelMomentumRating, NovelTemporalValidator
 from data_generator import RealDataGenerator
 from ea import run_evolution, evaluate_individual
 from evaluation import statistical_analysis
@@ -271,14 +271,20 @@ def run_player_specific_validation() -> dict:
                 delta = K * (expected - actual)
                 game.opponent_elo -= delta
 
+        # Split data for temporal validation
+        train_data, future_test_data = NovelTemporalValidator.create_prediction_horizon_split(
+            player_games, horizon=50
+        )
+
         # Train player-specific momentum model with multi-run evolution
         momentum_weights = train_momentum_system(
-            player_games, pop_size=300, ngen=200, num_runs=3
+            train_data, pop_size=300, ngen=200, num_runs=3
         )
 
         # Validate on player's future games
-        validation_results = validate_temporal_prediction(
-            player_games, momentum_weights, prediction_horizon=50
+        print(f"About to validate, future_test_data length: {len(future_test_data)}")
+        validation_results = evaluate_future_prediction_accuracy(
+            future_test_data, momentum_weights
         )
 
         # Analyze cavity prevention
