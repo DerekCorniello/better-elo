@@ -9,6 +9,7 @@ and evolutionary algorithms to prove it prevents rating cavities.
 import sys
 import os
 import numpy as np
+import math
 
 # Add src directory to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -239,9 +240,9 @@ def run_player_specific_validation() -> dict:
     print("=" * 55)
     print("Training individual momentum models for each player")
     print("Each model optimized for that player's unique momentum patterns")
-    print("⚠️  WARNING: This will take considerable time (20-40 min) with intensive parameters!")
-    print("   Population: 300, Generations: 200, Runs: 3 per player")
-    print("   Total evolutionary evaluations per player: 300 × 200 × 3 = 180,000")
+    print("⚠️  WARNING: This will take considerable time (45-90 min) with intensive parameters!")
+    print("   Population: 300, Generations: 1000 (with early convergence), Runs: 3 per player")
+    print("   Total evolutionary evaluations per player: 300 × 1000 × 3 = 900,000")
 
     # Target players for individual model training (testing stronger regularization on Magnus first)
     players = ["MagnusCarlsen"]
@@ -278,7 +279,7 @@ def run_player_specific_validation() -> dict:
 
         # Train player-specific momentum model with multi-run evolution
         momentum_weights = train_momentum_system(
-            train_data, pop_size=300, ngen=200, num_runs=3
+            train_data, pop_size=300, ngen=1000, num_runs=3
         )
 
         # Validate on player's future games
@@ -286,24 +287,108 @@ def run_player_specific_validation() -> dict:
         validation_results = evaluate_future_prediction_accuracy(
             future_test_data, momentum_weights
         )
+        
+        # Calculate statistical significance
+        momentum_predictions = []
+        elo_predictions = []
+        actual_results = []
+        
+        for game in future_test_data:
+            # Traditional Elo prediction
+            elo_prob = 1 / (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+            
+            # Calculate momentum adjustment (small adjustment to Elo)
+            features = game.to_feature_vector()
+            momentum_adjustment = sum(w * f for w, f in zip(momentum_weights, features))
+            
+            # Limit momentum adjustment to reasonable range (-0.2 to +0.2)
+            momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
+            
+            # Enhanced prediction: Elo + momentum adjustment
+            enhanced_prob = elo_prob + momentum_adjustment
+            
+            # Ensure probability stays in valid range [0, 1]
+            enhanced_prob = max(0.01, min(0.99, enhanced_prob))
+            
+            momentum_predictions.append(enhanced_prob)
+            elo_predictions.append(elo_prob)
+            actual_results.append(game.actual_result)
+        
+        stats_results = calculate_statistical_significance(momentum_predictions, elo_predictions, actual_results)
 
         # Analyze cavity prevention
         cavity_results = analyze_cavity_prevention(player_games, momentum_weights)
 
         results[player] = {
-            'weights': momentum_weights,
             'future_accuracy': validation_results['accuracy'],
+            'elo_accuracy': validation_results['elo_accuracy'],
             'brier_score': validation_results['brier_score'],
+            'elo_brier_score': validation_results['elo_brier_score'],
             'total_games_validated': validation_results['total_games'],
             'cavity_episodes': cavity_results['cavity_episodes'],
             'cavity_frequency': cavity_results['cavity_frequency'],
             'avg_cavity_duration': cavity_results['avg_cavity_duration'],
-            'improvement_over_baseline': validation_results['accuracy'] - 0.5
+            'improvement_over_elo': validation_results['accuracy'] - validation_results['elo_accuracy'],
+            'relative_improvement': (validation_results['accuracy'] - validation_results['elo_accuracy']) / validation_results['elo_accuracy'] * 100,
+            'brier_skill_score': (validation_results['elo_brier_score'] - validation_results['brier_score']) / validation_results['elo_brier_score'] * 100,
+            'auc_improvement': validation_results['auc_improvement'] * 100,
+            'statistical_significance': stats_results
         }
 
         print(f"✓ {player} model trained and validated")
 
     return results
+
+def calculate_statistical_significance(momentum_predictions, elo_predictions, actual_results):
+    """Calculate statistical significance using McNemar's test"""
+    # Convert to binary predictions
+    momentum_binary = [1 if p > 0.5 else 0 for p in momentum_predictions]
+    elo_binary = [1 if p > 0.5 else 0 for p in elo_predictions]
+    actual_binary = [1 if r > 0.5 else 0 for r in actual_results]
+    
+    # Create contingency table for McNemar's test
+    momentum_correct = [m == a for m, a in zip(momentum_binary, actual_binary)]
+    elo_correct = [e == a for e, a in zip(elo_binary, actual_binary)]
+    
+    # Count cases
+    b = sum(1 for m, e in zip(momentum_correct, elo_correct) if m and not e)  # Momentum right, Elo wrong
+    c = sum(1 for m, e in zip(momentum_correct, elo_correct) if not m and e)  # Elo right, Momentum wrong
+    
+    # Simple significance test
+    if b + c > 0:
+        # Exact binomial test for small samples
+        n = b + c
+        k = min(b, c)
+        # Calculate two-sided p-value
+        from math import comb
+        p_value = 2 * sum(comb(n, i) * (0.5**n) for i in range(k + 1))
+        p_value = min(p_value, 1.0)
+    else:
+        p_value = 1.0
+    
+    # Simple bootstrap CI for accuracy difference
+    n_bootstrap = 1000
+    accuracy_diffs = []
+    n = len(actual_results)
+    
+    for _ in range(n_bootstrap):
+        indices = np.random.choice(n, n, replace=True)
+        momentum_acc = sum(momentum_binary[i] == actual_binary[i] for i in indices) / n
+        elo_acc = sum(elo_binary[i] == actual_binary[i] for i in indices) / n
+        accuracy_diffs.append(momentum_acc - elo_acc)
+    
+    accuracy_diffs.sort()
+    ci_lower = accuracy_diffs[int(0.025 * n_bootstrap)]
+    ci_upper = accuracy_diffs[int(0.975 * n_bootstrap)]
+    mean_diff = np.mean(accuracy_diffs)
+    
+    return {
+        'mcnemar_p_value': p_value,
+        'accuracy_diff_ci_lower': ci_lower,
+        'accuracy_diff_ci_upper': ci_upper,
+        'accuracy_diff_mean': mean_diff,
+        'statistically_significant': p_value < 0.05
+    }
 
 def aggregate_player_specific_results(results_dict: dict) -> dict:
     """Aggregate and analyze results across all players"""
@@ -317,12 +402,23 @@ def aggregate_player_specific_results(results_dict: dict) -> dict:
         return {'error': 'No valid results to aggregate'}
 
     accuracies = [r['future_accuracy'] for r in valid_results]
+    elo_accuracies = [r.get('elo_accuracy', 0) for r in valid_results]
     cavity_frequencies = [r.get('cavity_frequency', 0) for r in valid_results]
+    improvements = [r.get('improvement_over_elo', 0) for r in valid_results]
+    
+    # Statistical significance across players
+    significant_results = [r for r in valid_results 
+                          if r.get('statistical_significance', {}).get('statistically_significant', False)]
 
     return {
         'players_tested': len(valid_results),
         'mean_accuracy': float(np.mean(accuracies)),
         'std_accuracy': float(np.std(accuracies)),
+        'mean_elo_accuracy': float(np.mean(elo_accuracies)),
+        'mean_improvement': float(np.mean(improvements)),
+        'std_improvement': float(np.std(improvements)),
+        'statistically_significant_players': len(significant_results),
+        'significance_rate': len(significant_results) / len(valid_results) if valid_results else 0,
         'min_accuracy': float(min(accuracies)),
         'max_accuracy': float(max(accuracies)),
         'mean_cavity_frequency': float(np.mean(cavity_frequencies)),
@@ -468,20 +564,32 @@ def main():
             # Show individual player results
             for player, data in results.items():
                 print(f"\n{player}:")
-                print(f"  Future Prediction Accuracy: {data['future_accuracy']:.1%}")
-                print(f"  Brier Score: {data['brier_score']:.3f}")
-                print(f"  Cavity Frequency: {data['cavity_frequency']:.3f}")
-                print(f"  Improvement over Baseline: {data['improvement_over_baseline']:.1%}")
-                print(f"  Games Validated: {data['total_games_validated']}")
-                print(f"  Momentum Weights: {[f'{w:.2f}' for w in data['weights']]}")
+            print(f"  Future Prediction Accuracy: {data['future_accuracy']:.1%}")
+            print(f"  Elo Baseline Accuracy: {data.get('elo_accuracy', 0):.1%}")
+            print(f"  Brier Score: {data['brier_score']:.3f}")
+            print(f"  Elo Brier Score: {data.get('elo_brier_score', 0):.3f}")
+            print(f"  Cavity Frequency: {data['cavity_frequency']:.3f}")
+            print(f"  Improvement over Elo: {data.get('improvement_over_elo', 0):.1%}")
+            print(f"  Relative Improvement: {data.get('relative_improvement', 0):.1f}%")
+            print(f"  Brier Skill Score: {data.get('brier_skill_score', 0):.1f}%")
+            print(f"  AUC Improvement: {data.get('auc_improvement', 0):.1f}%")
+            print(f"  Games Validated: {data['total_games_validated']}")
+            print(f"  Momentum Weights: {[f'{w:.2f}' for w in data.get('weights', [])]}")
 
             # Show aggregate results
             if aggregated and 'mean_accuracy' in aggregated:
                 accuracies = [data['future_accuracy'] for data in results.values()]
                 print(f"\nAGGREGATE RESULTS:")
                 print(f"Individual Accuracies: {accuracies}")
-                print(f"Mean Accuracy: {aggregated['mean_accuracy']:.1%} (±{aggregated['std_accuracy']:.1%})")
-                print(".1f")
+                print(f"Mean Momentum Accuracy: {aggregated['mean_accuracy']:.1%} (±{aggregated['std_accuracy']:.1%})")
+                print(f"Mean Elo Accuracy: {aggregated['mean_elo_accuracy']:.1%}")
+                print(f"Mean Improvement: {aggregated['mean_improvement']:.1%} (±{aggregated['std_improvement']:.1%})")
+                print(f"Statistically Significant Players: {aggregated['statistically_significant_players']}/{aggregated['players_tested']} ({aggregated['significance_rate']:.1%})")
+                
+                if aggregated['mean_improvement'] > 0:
+                    print(f"✅ IMPROVEMENT: Momentum system outperforms Elo by {aggregated['mean_improvement']:.1%} on average")
+                else:
+                    print(f"❌ NO IMPROVEMENT: Momentum system underperforms Elo by {abs(aggregated['mean_improvement']):.1%} on average")
 
                 if aggregated['mean_accuracy'] > 0.75:
                     print("✅ EXCEPTIONAL: Player-specific momentum models revolutionize chess ratings!")

@@ -20,19 +20,30 @@ def predict_momentum_adjustment(weights, features: list) -> float:
 def evaluate_individual(individual: list,
                          dataset: List[UserGameData]) -> tuple:
     """
-    Evaluate fitness of an individual using Elo-independent outcome prediction
+    Evaluate fitness of an individual using momentum-enhanced Elo predictions
     """
     import math
     total_error = 0.0
     total = len(dataset)
     for game in dataset:
+        # Calculate traditional Elo prediction
+        elo_expected = 1 / (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+        
+        # Calculate momentum adjustment (small adjustment to Elo)
         features = game.to_feature_vector()
-        linear = sum(w * f for w, f in zip(individual, features))
-        # Clip to prevent overflow
-        linear = max(-500, min(500, linear))
-        predicted_prob = 1 / (1 + math.exp(-linear))
+        momentum_adjustment = sum(w * f for w, f in zip(individual, features))
+        
+        # Limit momentum adjustment to reasonable range (-0.2 to +0.2)
+        momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
+        
+        # Enhanced prediction: Elo + momentum adjustment
+        enhanced_prob = elo_expected + momentum_adjustment
+        
+        # Ensure probability stays in valid range [0, 1]
+        enhanced_prob = max(0.01, min(0.99, enhanced_prob))
+        
         actual_result = game.actual_result
-        error = (predicted_prob - actual_result) ** 2
+        error = (enhanced_prob - actual_result) ** 2
         total_error += error
     mse = total_error / total if total > 0 else 0.0
     # Add L2 regularization penalty for large weights
@@ -71,12 +82,29 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 100,
 
     hof.update(pop)
 
-    # evolution loop
+    # evolution loop with early convergence detection
+    best_fitness_history = []
+    no_improvement_count = 0
+    
     for gen in range(ngen):
-        # Progress reporting
-        if gen % 20 == 0 or gen == ngen - 1:
+        # Progress reporting every 50 generations
+        if gen % 50 == 0 or gen == ngen - 1:
             best_fitness = hof[0].fitness.values[0] if hof else float('inf')
             print(f"Generation {gen+1}/{ngen}: Best fitness = {best_fitness:.4f}")
+            
+            # Track fitness for convergence detection
+            best_fitness_history.append(best_fitness)
+            
+            # Check for convergence (no improvement < 0.0001 in last 100 generations)
+            if len(best_fitness_history) >= 2:
+                improvement = best_fitness_history[-2] - best_fitness_history[-1]
+                if improvement < 0.0001:
+                    no_improvement_count += 1
+                    if no_improvement_count >= 2:  # 100 generations with no improvement (50*2)
+                        print(f"Converged after {gen+1} generations (improvement < 0.0001 for 100 generations)")
+                        break
+                else:
+                    no_improvement_count = 0
 
         # select offspring (elitism: keep best individuals)
         offspring = toolbox.select(pop, len(pop) - len(hof))

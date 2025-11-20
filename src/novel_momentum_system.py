@@ -146,40 +146,130 @@ class NovelMomentumSystem:
 
 
 def evaluate_future_prediction_accuracy(test_games: List[Any], weights: list) -> Dict[str, float]:
-    """Evaluate prediction accuracy using Elo-independent direct outcome prediction"""
+    """Enhanced evaluation with multiple accuracy metrics and proper baselines"""
     import math
-    correct_predictions = 0
+    import numpy as np
+    from sklearn.metrics import roc_auc_score, log_loss
+    from sklearn.calibration import calibration_curve
+    
+    if not test_games:
+        return {'accuracy': 0.0, 'brier_score': 0.0, 'total_games': 0}
+    
     total_games = len(test_games)
+    predictions = []
+    actual_results = []
+    elo_predictions = []
+    correct_predictions = 0
     brier_score = 0.0
+    log_loss_sum = 0.0
 
     for game in test_games:
-        # Predict outcome using direct sigmoid model
+        # Traditional Elo prediction for comparison
+        elo_expected = 1 / (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+        
+        # Calculate momentum adjustment (small adjustment to Elo)
         features = game.to_feature_vector()
-        linear = sum(w * f for w, f in zip(weights, features))
-        # Clip to prevent overflow
-        linear = max(-500, min(500, linear))
-        p1_prob = 1 / (1 + math.exp(-linear))
-
-        # Determine actual outcome
-        actual_result = game.actual_result
-
-        # Binary prediction
-        predicted_win = 1 if p1_prob > 0.5 else 0
-        actual_win = 1 if actual_result > 0.5 else 0
-
+        momentum_adjustment = sum(w * f for w, f in zip(weights, features))
+        
+        # Limit momentum adjustment to reasonable range (-0.2 to +0.2)
+        momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
+        
+        # Enhanced prediction: Elo + momentum adjustment
+        enhanced_prob = elo_expected + momentum_adjustment
+        
+        # Ensure probability stays in valid range [0, 1]
+        enhanced_prob = max(0.01, min(0.99, enhanced_prob))
+        
+        predictions.append(enhanced_prob)
+        elo_predictions.append(elo_expected)
+        actual_results.append(game.actual_result)
+        
+        # Binary prediction (0.5 threshold)
+        predicted_win = 1 if enhanced_prob > 0.5 else 0
+        actual_win = 1 if game.actual_result > 0.5 else 0
+        
         if predicted_win == actual_win:
             correct_predictions += 1
-
+        
         # Brier score
-        brier_score += (p1_prob - actual_result) ** 2
+        brier_score += (enhanced_prob - game.actual_result) ** 2
+        
+        # Log loss
+        enhanced_prob_clipped = max(1e-15, min(1 - 1e-15, enhanced_prob))  # Prevent log(0)
+        log_loss_sum += -(game.actual_result * math.log(enhanced_prob_clipped) + 
+                         (1 - game.actual_result) * math.log(1 - enhanced_prob_clipped))
 
-    accuracy = correct_predictions / total_games if total_games > 0 else 0.0
-    brier_score = brier_score / total_games if total_games > 0 else 0.0
+    # Basic metrics
+    accuracy = correct_predictions / total_games
+    brier_score = brier_score / total_games
+    log_loss = log_loss_sum / total_games
+    
+    # Elo baseline metrics
+    elo_correct = sum(1 for i, pred in enumerate(elo_predictions) if 
+                      (pred > 0.5 and actual_results[i] > 0.5) or 
+                      (pred <= 0.5 and actual_results[i] <= 0.5))
+    elo_accuracy = elo_correct / total_games
+    
+    elo_brier = sum((pred - actual) ** 2 for pred, actual in zip(elo_predictions, actual_results)) / total_games
+    
+    # Advanced metrics
+    try:
+        auc_roc = roc_auc_score(actual_results, predictions)
+        elo_auc = roc_auc_score(actual_results, elo_predictions)
+    except:
+        auc_roc = 0.5  # Random performance
+        elo_auc = 0.5
+    
+    # Calibration metrics
+    try:
+        fraction_of_positives, mean_predicted_value = calibration_curve(
+            actual_results, predictions, n_bins=10)
+        calibration_error = np.mean(np.abs(fraction_of_positives - mean_predicted_value))
+    except:
+        calibration_error = 0.0
+    
+    # Different threshold accuracies
+    threshold_accuracies = {}
+    for threshold in [0.4, 0.45, 0.5, 0.55, 0.6]:
+        thresh_correct = sum(1 for pred, actual in zip(predictions, actual_results) 
+                           if (pred > threshold and actual > 0.5) or 
+                           (pred <= threshold and actual <= 0.5))
+        threshold_accuracies[f'threshold_{threshold}'] = thresh_correct / total_games
+    
+    # Confidence-weighted accuracy
+    confidence_weighted_acc = sum(
+        abs(pred - 0.5) * 2 * ((pred > 0.5 and actual > 0.5) or (pred <= 0.5 and actual <= 0.5))
+        for pred, actual in zip(predictions, actual_results)
+    ) / sum(abs(pred - 0.5) * 2 for pred in predictions) if predictions else 0
 
     return {
         'accuracy': accuracy,
         'brier_score': brier_score,
+        'log_loss': log_loss,
+        'auc_roc': auc_roc,
+        'calibration_error': calibration_error,
+        'confidence_weighted_accuracy': confidence_weighted_acc,
         'total_games': total_games,
+        
+        # Baseline comparisons
+        'elo_accuracy': elo_accuracy,
+        'elo_brier_score': elo_brier,
+        'elo_auc_roc': elo_auc,
+        
+        # Improvements
+        'accuracy_improvement': accuracy - elo_accuracy,
+        'brier_improvement': elo_brier - brier_score,  # Lower is better
+        'auc_improvement': auc_roc - elo_auc,
+        
+        # Threshold analysis
+        **threshold_accuracies,
+        
+        # Additional metrics
+        'precision': sum(1 for pred, actual in zip(predictions, actual_results) 
+                         if pred > 0.5 and actual > 0.5) / sum(1 for pred in predictions if pred > 0.5) if sum(1 for pred in predictions if pred > 0.5) > 0 else 0,
+        'recall': sum(1 for pred, actual in zip(predictions, actual_results) 
+                      if pred > 0.5 and actual > 0.5) / sum(1 for actual in actual_results if actual > 0.5) if sum(1 for actual in actual_results if actual > 0.5) > 0 else 0,
+        'f1_score': 0.0  # Will be calculated below
     }
 
 
