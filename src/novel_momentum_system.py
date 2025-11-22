@@ -416,8 +416,8 @@ class NovelTemporalValidator:
         """Split dataset with prediction horizon to prevent data leakage"""
         sorted_data = sorted(dataset, key=lambda g: g.end_time)
         
-        # Train on early games, test on games far in future
-        train_end_idx = len(sorted_data) // 2
+        # Train on early games (80%), test on games far in future (20%)
+        train_end_idx = int(len(sorted_data) * 0.8)
         test_start_idx = train_end_idx + horizon
         
         return sorted_data[:train_end_idx], sorted_data[test_start_idx:]

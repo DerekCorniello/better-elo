@@ -240,10 +240,20 @@ def run_player_specific_validation() -> dict:
     print("=" * 55)
     print("Training individual momentum models for each player")
     print("Each model optimized for that player's unique momentum patterns")
-    print("⚠️  WARNING: This will take considerable time (60-120 min) with enhanced parameters!")
-    print("   Population: 400, Generations: 500 (with early convergence), Runs: 3 per player")
-    print("   Enhanced selection: Tournament size 25, Stronger elitism 5%, Weight regularization 10x")
-    print("   Total evolutionary evaluations per player: 400 × 500 × 3 = 600,000")
+    print("⚠️  WARNING: This will take considerable time (20-40 hours) with enhanced parameters!")
+    print("   Population: 1000, Generations: 10,000 (with early convergence), Runs: 3 per player")
+    print("   Enhanced selection: DE/rand/1-bin, Self-adaptive F/CR, Weight bounds [-100,100]")
+    print("   Training split: 80% of data (vs previous 50%) for better optimization")
+    print("   Total evolutionary evaluations per player: 1000 × 10000 × 3 = 30,000,000")
+    print("🚀 PLAYER-SPECIFIC MOMENTUM MODEL VALIDATION")
+    print("=" * 55)
+    print("Training individual momentum models for each player")
+    print("Each model optimized for that player's unique momentum patterns")
+    print("⚠️  WARNING: This will take considerable time (20-40 hours) with enhanced parameters!")
+    print("   Population: 1000, Generations: 10,000 (with early convergence), Runs: 3 per player")
+    print("   Enhanced selection: DE/rand/1-bin, Self-adaptive F/CR, Weight bounds [-100,100]")
+    print("   Training split: 80% of data (vs previous 50%) for better optimization")
+    print("   Total evolutionary evaluations per player: 1000 × 10000 × 3 = 30,000,000")
 
     # Target players for individual model training (testing stronger regularization on Magnus first)
     players = ["MagnusCarlsen"]
@@ -280,7 +290,7 @@ def run_player_specific_validation() -> dict:
 
         # Train player-specific momentum model with multi-run evolution
         momentum_weights = train_momentum_system(
-            train_data, pop_size=400, ngen=500, num_runs=3
+            train_data, pop_size=1000, ngen=10000, num_runs=3
         )
 
         # Validate on player's future games using direct comparison
