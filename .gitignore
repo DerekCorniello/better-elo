@@ -209,3 +209,6 @@ __marimo__/
 # my application specific:
 **/*.png
 **/*.txt
+
+# exclude other player data to keep repo size manageable
+!data/MagnusCarlsen/*

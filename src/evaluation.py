@@ -1,23 +1,33 @@
-import random
+from models import UserGameData
+from ea import evaluate_individual, run_evolution
 from typing import List, Tuple, Dict, Any
-import numpy as np
 from scipy import stats
+import random
+import numpy as np
 import sys
 import os
-# Add current directory to path for absolute imports
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
-
-from models import UserGameData
-from ea import evaluate_individual, run_evolution
 
 
 def train_test_split(dataset: List[UserGameData], test_size: float = 0.2,
                      random_state: int = 0) -> Tuple[List[UserGameData],
                                                      List[UserGameData]]:
     """
-    Split dataset into train and test sets
+    Split dataset into train and test sets.
+
+    Inputs:
+    - dataset: list of UserGameData
+    - test_size: float, fraction for test set (default 0.2)
+    - random_state: int, random seed for reproducibility
+
+    Outputs:
+    - tuple: (train_data, test_data)
+
+    Expected behavior:
+    Shuffles and splits the dataset into training and testing portions.
     """
     if random_state is not None:
         random.seed(random_state)
@@ -31,8 +41,16 @@ def train_test_split(dataset: List[UserGameData], test_size: float = 0.2,
 
 def evaluate_baseline(test_dataset: List[UserGameData]) -> float:
     """
-    Evaluate baseline MSE: predict no momentum adjustment
-        (adjusted Elo = pre_game_elo)
+    Evaluate baseline MSE: predict no momentum adjustment.
+
+    Inputs:
+    - test_dataset: list of UserGameData for testing
+
+    Outputs:
+    - float: mean squared error of baseline predictions
+
+    Expected behavior:
+    Calculates MSE assuming no Elo change (post_elo = pre_elo).
     """
     if not test_dataset:
         return 0.0
@@ -47,7 +65,20 @@ def run_evaluation(dataset: List[UserGameData], num_runs: int = 3,
                    ngen: int = 50) -> Tuple[Any, List[float],
                                             List[float], List[float]]:
     """
-    Run multiple evolutionary runs and collect MSEs and R2s
+    Run multiple evolutionary runs and collect metrics.
+
+    Inputs:
+    - dataset: list of UserGameData
+    - num_runs: int, number of evolutionary runs
+    - pop_size: int, population size
+    - ngen: int, generations per run
+
+    Outputs:
+    - tuple: (best_individual, mses, baseline_mses, r2s)
+
+    Expected behavior:
+    Runs evolution multiple times, evaluates on test splits,
+    returns best model and performance metrics.
     """
     mses = []
     baseline_mses = []
@@ -79,7 +110,17 @@ def run_evaluation(dataset: List[UserGameData], num_runs: int = 3,
 
 def compute_r2(predictions: List[float], actuals: List[float]) -> float:
     """
-    Compute R-squared for predictions
+    Compute R-squared for predictions.
+
+    Inputs:
+    - predictions: list of predicted values
+    - actuals: list of actual values
+
+    Outputs:
+    - float: R-squared value
+
+    Expected behavior:
+    Calculates coefficient of determination for regression quality.
     """
     ss_res = np.sum((np.array(actuals) - np.array(predictions)) ** 2)
     ss_tot = np.sum((np.array(actuals) - np.mean(actuals)) ** 2)
@@ -89,7 +130,18 @@ def compute_r2(predictions: List[float], actuals: List[float]) -> float:
 def statistical_analysis(mses: List[float], baseline_mses: List[float],
                          r2s: List[float]) -> Dict:
     """
-    Perform statistical analysis on MSE results
+    Perform statistical analysis on MSE results.
+
+    Inputs:
+    - mses: list of momentum system MSEs
+    - baseline_mses: list of baseline MSEs
+    - r2s: list of R-squared values
+
+    Outputs:
+    - dict: statistical metrics including p-values, improvements
+
+    Expected behavior:
+    Computes means, stds, t-tests, and improvement statistics.
     """
     mse_mean = np.mean(mses)
     mse_std = np.std(mses)

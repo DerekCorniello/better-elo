@@ -1,22 +1,53 @@
 import json
 import os
-import numpy as np
 from typing import List
 import sys
-import os
-# Add current directory to path for absolute imports
+from models import UserGameData, PlayerFeatures, MatchData
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from models import UserGameData, PlayerFeatures, MatchData
-
 
 class RealDataGenerator:
+    """
+    Generates training datasets from real Chess.com game data.
+
+    Attributes:
+    - username: str, player username to generate data for
+    """
+
     def __init__(self, username: str):
+        """
+        Initialize data generator for a player.
+
+        Inputs:
+        - username: str, Chess.com username
+
+        Outputs:
+        - None
+
+        Expected behavior:
+        Sets up generator for the specified player.
+        """
         self.username = username
 
-    def generate_dataset(self, velocity_window: int = 10) -> List[UserGameData]:
+    def generate_dataset(self, velocity_window: int = 10
+                         ) -> List[UserGameData]:
+        """
+        Generate dataset of UserGameData from player's games.
+
+        Inputs:
+        - velocity_window: int, games to look back for velocity calculation
+
+        Outputs:
+        - List[UserGameData]: processed game data for training
+
+        Expected behavior:
+        Loads JSON games, filters to blitz, computes features
+            and Elo adjustments.
+        Returns list of game data objects.
+        """
         # Load games from JSON data we extracted
         filepath = f'data/{self.username}/games.json'
         if not os.path.exists(filepath):
@@ -27,7 +58,7 @@ class RealDataGenerator:
 
         # filter to blitz time controls (180, 180+1, 180+2) for consistency
         # NOTE: you can filter anything if you want, but blitz is the most
-        # common with the largest amount of data
+        # common with the largest amount of data for the users we have
         games = [g for g in games if g.get(
             'time_control', '').startswith('180')]
         print(f"Filtered to {len(games)} blitz games for {self.username}")
@@ -47,7 +78,8 @@ class RealDataGenerator:
                 user_result = game['black']['result']
             else:
                 # shouldnt hit this but...
-                print("Skipping a game without the user in it (investigate the data)")
+                print("Skipping a game without the user in it \
+                        (investigate the data)")
                 continue
 
             # compute velocity change over last N games
@@ -67,27 +99,28 @@ class RealDataGenerator:
                 history, post_rating, game['end_time'])
             features.velocity = velocity
 
-            # Extract opponent Elo
             if game['white']['username'].lower() == self.username.lower():
                 opponent_elo = game['black']['rating']
             else:
                 opponent_elo = game['white']['rating']
 
-            # Determine actual result correctly
             if user_result == 'win':
-                actual_result = 1.0  # Player won
-            elif user_result in ['resigned', 'checkmated', 'timeout', 'abandoned']:
-                actual_result = 0.0  # Player lost
+                actual_result = 1.0  # player won
+            elif user_result in ['resigned', 'checkmated',
+                                 'timeout', 'abandoned']:
+                actual_result = 0.0  # player lost
             else:
-                actual_result = 0.5  # Draw or other result
+                actual_result = 0.5  # draw or other result
 
-            # Adjust opponent Elo to approximate pre-game rating using Elo formula
-            if actual_result != 0.5:  # Only adjust for decisive games
+            # adjust opponent Elo to approximate pre-game
+            # rating using Elo formula, since the data
+            # we get is post game only...
+            if actual_result != 0.5:  # only adjust for decisive games
                 expected = 1 / (1 + 10 ** ((opponent_elo - pre_rating) / 400))
                 actual = actual_result
                 K = 20  # Standard K-factor
                 delta = K * (expected - actual)
-                opponent_elo -= delta  # Approximate pre-game Elo
+                opponent_elo -= delta  # get pre-game Elo
 
             user_game = UserGameData(
                 username=self.username,
@@ -102,12 +135,23 @@ class RealDataGenerator:
 
             user_games.append(user_game)
             history.append(game)
-
-        # Keep original features - normalization destroys momentum patterns
-        # The evolutionary algorithm needs the raw, meaningful relationships
-
         return user_games
 
-    # TODO: this is messy, lets fix
-    def _calculate_features(self, history: List[dict], current_elo: float, match_end_time: int) -> PlayerFeatures:
-        return MatchData._calculate_features(self.username, current_elo, history, match_end_time)
+    def _calculate_features(self, history: List[dict], current_elo: float,
+                            match_end_time: int) -> PlayerFeatures:
+        """
+        Wrapper to calculate player features from game history.
+
+        Inputs:
+        - history: list of game dicts
+        - current_elo: float, current player rating
+        - match_end_time: int, timestamp of current match
+
+        Outputs:
+        - PlayerFeatures: computed features
+
+        Expected behavior:
+        Delegates to MatchData._calculate_features for feature computation.
+        """
+        return MatchData._calculate_features(self.username, current_elo,
+                                             history, match_end_time)
