@@ -99,14 +99,9 @@ def get_user_games(username, months=3):
 
 if __name__ == "__main__":
     # List of usernames to fetch data for
+    # NOTE: You can edit this list to add/remove players. For now, keeping MagnusCarlsen for demo purposes.
     usernames = [
-        "hikaru",
-        "GothamChess",
-        "MagnusCarlsen",
-        "FabianoCaruana",
-        "WesleySo",
-        "AnishGiri",
-        "AnnaCramling"
+        "MagnusCarlsen"
     ]
     months = 24  # Fetch last 24 months for more data
 

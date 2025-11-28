@@ -130,6 +130,11 @@ Initial 6 momentum features:
 
 ### Final Results Summary
 
+#### Key Metrics Explained
+- **Cavity Frequency**: Rate of rating cavities (periods where performance diverges from rating). Lower values indicate better stability; the system achieves near-zero frequency (0.0008) vs. Elo's 0.05+.
+- **Brier Score**: Calibration accuracy of probability predictions (mean squared error). Lower is better; momentum system: 0.219 vs. Elo's 0.245 (10.6% improvement).
+- **AUC-ROC**: Discriminative ability across probability thresholds (0.5=random, 1.0=perfect). Momentum system: 0.78 vs. Elo's 0.74 (+5.4% improvement).
+
 #### Overall Performance
 | Metric | Momentum System | Traditional Elo | Improvement | Statistical Significance |
 |--------|-----------------|-----------------|-------------|--------------------------|
