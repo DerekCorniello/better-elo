@@ -210,5 +210,12 @@ __marimo__/
 **/*.png
 **/*.txt
 
-# exclude other player data to keep repo size manageable
-!data/MagnusCarlsen/*
+# Ignore everything inside data/ except MagnusCarlsen/games.json
+data/*
+!data/MagnusCarlsen/
+data/MagnusCarlsen/*
+!data/MagnusCarlsen/games.json
+
+# Ignore everything inside docs/ except results_timeline.md
+docs/*
+!docs/results_timeline.md
