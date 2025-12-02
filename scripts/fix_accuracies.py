@@ -3,30 +3,46 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 
-def fix_accuracies():
-    data_dir = 'data'
-    script_path = 'scripts/analyze_game.py'
+# Add src directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+try:
+    from logging_config import get_logger
+except ImportError:
+    # Fallback for when running as script
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+    from logging_config import get_logger
 
-    print("Starting fix_accuracies")
+logger = get_logger(__name__)
+
+
+def fix_accuracies():
+    """Fix missing accuracies in game data files."""
+    data_dir = "data"
+    script_path = "scripts/analyze_game.py"
+
+    logger.info("Starting fix_accuracies")
 
     # Only process MagnusCarlsen for now
     user_dir = 'MagnusCarlsen'
     user_path = os.path.join(data_dir, user_dir)
-    print(f"Checking {user_path}")
+    logger.info("Checking %s", user_path)
     if not os.path.isdir(user_path):
-        print("Not a dir")
+        logger.error("Not a directory")
         return
 
     username = user_dir  # The player whose data this is
-    games_file = os.path.join(user_path, 'games.json')
-    print(f"Checking {games_file}")
+    games_file = os.path.join(user_path, "games.json")
+    logger.info("Checking %s", games_file)
     if not os.path.exists(games_file):
-        print("File not exists")
+        logger.error("File does not exist")
         return
 
-    print(f"Processing {games_file} for {username}")
+    logger.info("Processing %s for %s", games_file, username)
 
     with open(games_file, 'r') as f:
         games = json.load(f)
@@ -46,7 +62,12 @@ def fix_accuracies():
                     opponent = game['black']['username']
                 else:
                     opponent = game['white']['username']
-                print(f"Fixing accuracy for {username.lower()} vs {opponent.lower()} in game {game['url']}")
+                logger.info(
+                    "Fixing accuracy for %s vs %s in game %s",
+                    username.lower(),
+                    opponent.lower(),
+                    game["url"],
+                )
 
                 # Write PGN to temp file
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.pgn', delete=False) as temp_pgn:
@@ -68,17 +89,17 @@ def fix_accuracies():
                             game['computed_accuracy'] = new_accuracy
                             updated = True
                             processed_count += 1
-                            print(f"Updated accuracy to {new_accuracy}%")
+                            logger.info("Updated accuracy to %f%%", new_accuracy)
                             break
                 except subprocess.CalledProcessError as e:
-                    print(f"Error running analyze_game: {e}")
+                    logger.error("Error running analyze_game: %s", e)
                 finally:
                     os.unlink(temp_pgn_path)
 
     if updated:
             with open(games_file, 'w') as f:
                 json.dump(games, f, indent=2)
-            print(f"Updated {processed_count} games in {games_file}")
+            logger.info("Updated %d games in %s", processed_count, games_file)
 
 if __name__ == "__main__":
     fix_accuracies()

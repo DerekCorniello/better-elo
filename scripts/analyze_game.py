@@ -1,10 +1,27 @@
 #!/usr/bin/env python3
 
-import sys
 import io
+import os
+import sys
+
 import chess
 import chess.pgn
 from stockfish import Stockfish
+
+# Add src directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+try:
+    from config import config
+    from logging_config import get_logger
+except ImportError:
+    # Fallback for when running as script
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+    from config import config
+    from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def normalize_eval(eval_obj, side_to_move_is_white):
@@ -39,21 +56,16 @@ def analyze_game(pgn_text, username=None):
     if username is None:
         return {"error": "Username required"}
 
-    # NOTE:
-    # change this information for your system,
-    # i ran this on arch linux with a 16 core
-    # cpu and 24 GB RAM, and it ran decently well
-    # with depth of 20, so change and update
-    # as needed with your system
+    # Initialize Stockfish with configuration parameters
     stockfish = Stockfish(
-        path='/usr/bin/stockfish',
+        path=config.analysis["stockfish_path"],
         parameters={
             "Threads": 12,
             "Hash": 12288,  # 12GB RAM
             "Contempt": 0,
-        }
+        },
     )
-    stockfish.set_depth(20)
+    stockfish.set_depth(config.analysis["depth"])
 
     pgn = chess.pgn.read_game(io.StringIO(pgn_text))
     if pgn is None:
@@ -94,9 +106,13 @@ def analyze_game(pgn_text, username=None):
                 # the best measure of accuracy is centipawn loss:
                 # https://www.chess.com/blog/raync910/average-centipawn-loss-chess-acpl
                 best_cp = normalize_eval(
-                    best_after, side_to_move_is_white=(user_color == chess.WHITE))
+                    best_after,
+                    side_to_move_is_white=(user_color == chess.WHITE),
+                )
                 your_cp = normalize_eval(
-                    your_after, side_to_move_is_white=(user_color == chess.WHITE))
+                    your_after,
+                    side_to_move_is_white=(user_color == chess.WHITE),
+                )
 
                 # from white's pov, higher cp is better
                 # from black's pov, we flip the sign to keep things consistent
@@ -111,23 +127,23 @@ def analyze_game(pgn_text, username=None):
         else:
             board.push(move)
 
-    # compute accuracies: % of moves with |loss| < 50 cp
-    # this is a standard measurement, if it loses less than 50 cp,
-    # it is an accurate move
-    accurate_moves = sum(1 for loss in losses if abs(loss) < 50)
+    # Compute accuracies: % of moves with |loss| < threshold cp
+    # This is a standard measurement for accurate moves
+    threshold = config.analysis["accuracy_threshold"]
+    accurate_moves = sum(1 for loss in losses if abs(loss) < threshold)
     accuracy = (accurate_moves / len(losses)) * 100.0 if losses else 0.0
     avg_loss = sum(losses) / len(losses) if losses else 0.0
 
     return {
-        'accuracy': accuracy,
-        'avg_loss': avg_loss,
-        'num_moves': len(losses),
+        "accuracy": accuracy,
+        "avg_loss": avg_loss,
+        "num_moves": len(losses),
     }
 
 
 def main():
     if len(sys.argv) > 1:
-        with open(sys.argv[1], 'r') as f:
+        with open(sys.argv[1], "r") as f:
             pgn_text = f.read()
             username = sys.argv[2] if len(sys.argv) > 2 else None
     else:
@@ -135,12 +151,12 @@ def main():
         username = sys.argv[2] if len(sys.argv) > 2 else None
 
     result = analyze_game(pgn_text, username)
-    if 'error' in result:
-        print(result['error'])
+    if "error" in result:
+        logger.error(result["error"])
     else:
-        print(f"Accuracy for {username}: {result['accuracy']:.1f}%")
-        print(f"Average Centipawn Loss: {result['avg_loss']:.1f} cp")
-        print(f"Moves analyzed: {result['num_moves']}")
+        logger.info("Accuracy for %s: %.1f%%", username, result["accuracy"])
+        logger.info("Average Centipawn Loss: %.1f cp", result["avg_loss"])
+        logger.info("Moves analyzed: %d", result["num_moves"])
 
 
 if __name__ == "__main__":

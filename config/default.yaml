@@ -1,0 +1,17 @@
+data:
+  time_control: "180"
+api:
+  months: 24
+model:
+  k_factor: 20
+  velocity_window: 10
+evolution:
+  population_size: 500
+  generations: 10000
+  f_value: 0.8
+  cr_value: 0.9
+  num_runs: 5
+analysis:
+  stockfish_path: "/usr/bin/stockfish"
+  depth: 20
+  accuracy_threshold: 50

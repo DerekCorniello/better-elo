@@ -1,9 +1,10 @@
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Tuple
-from sklearn.metrics import roc_auc_score
-from sklearn.calibration import calibration_curve
 import math
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import roc_auc_score
 
 
 @dataclass
@@ -17,6 +18,7 @@ class NovelMomentumRating:
     - momentum_score: float, momentum adjustment
     - rating_history: List[float], historical ratings
     """
+
     player_id: str
     base_rating: float = 1500.0
     momentum_score: float = 0.0
@@ -49,10 +51,11 @@ class NovelMomentumRating:
         # Bound the exponent to prevent overflow
         exponent = (opponent_rating - self.momentum_rating) / 400.0
         exponent = max(min(exponent, 10.0), -10.0)  # Bound between -10 and 10
-        return 1.0 / (1.0 + 10.0 ** exponent)
+        return 1.0 / (1.0 + 10.0**exponent)
 
-    def update_momentum(self, momentum_features: List[float],
-                        weights: List[float]) -> None:
+    def update_momentum(
+        self, momentum_features: List[float], weights: List[float]
+    ) -> None:
         """
         Update momentum score based on features and weights.
 
@@ -63,13 +66,16 @@ class NovelMomentumRating:
         Outputs:
         - None (updates momentum_score)
         """
-        momentum_change = sum(
-            w * f for w, f in zip(weights, momentum_features))
+        momentum_change = sum(w * f for w, f in zip(weights, momentum_features))
         self.momentum_score = momentum_change
 
-    def update_rating(self, opponent_rating: float, actual_result: float,
-                      momentum_features: List[float],
-                      weights: List[float]) -> None:
+    def update_rating(
+        self,
+        opponent_rating: float,
+        actual_result: float,
+        momentum_features: List[float],
+        weights: List[float],
+    ) -> None:
         expected_result = self.calculate_win_probability(opponent_rating)
         adaptive_K = self.calculate_adaptive_K(momentum_features, weights)
         rating_change = adaptive_K * (actual_result - expected_result)
@@ -77,8 +83,9 @@ class NovelMomentumRating:
         self.update_momentum(momentum_features, weights)
         self.rating_history.append(self.momentum_rating)
 
-    def calculate_adaptive_K(self, momentum_features: List[float],
-                             weights: List[float]) -> float:
+    def calculate_adaptive_K(
+        self, momentum_features: List[float], weights: List[float]
+    ) -> float:
         """
         Calculate adaptive K-factor based on momentum.
 
@@ -97,22 +104,25 @@ class NovelMomentumRating:
         # (faster adjustment for improving players)
         rating_trend_weight = weights[3] if len(weights) > 3 else 0.0
         if rating_trend_weight > 0 and momentum_features[3] > 0:
-            momentum_multiplier += abs(
-                momentum_features[3] * rating_trend_weight) / 100.0
+            momentum_multiplier += (
+                abs(momentum_features[3] * rating_trend_weight) / 100.0
+            )
 
         # High velocity increases K
         # (consistent performance gets faster adjustment)
         velocity_weight = weights[5] if len(weights) > 5 else 0.0
         if velocity_weight > 0 and abs(momentum_features[5]) > 1:
-            momentum_multiplier += abs(
-                momentum_features[5] * velocity_weight) / 50.0
+            momentum_multiplier += (
+                abs(momentum_features[5] * velocity_weight) / 50.0
+            )
 
         # Win streaks affect K
         # (hot/cold streaks get faster adjustment)
         win_streak_weight = weights[0] if len(weights) > 0 else 0.0
         if abs(momentum_features[0]) >= 3:
-            momentum_multiplier += abs(
-                momentum_features[0] * win_streak_weight) / 20.0
+            momentum_multiplier += (
+                abs(momentum_features[0] * win_streak_weight) / 20.0
+            )
 
         # Cap K-factor to prevent extreme adjustments
         return min(max(base_K * momentum_multiplier, 16.0), 64.0)
@@ -128,14 +138,17 @@ class NovelMomentumSystem:
         self.momentum_weights: List[float] = [0.0] * 6
         self.prediction_horizon: int = 30
 
-    def add_player(self, player_id: str,
-                   initial_rating: float = 1500.0) -> None:
+    def add_player(
+        self, player_id: str, initial_rating: float = 1500.0
+    ) -> None:
         if player_id not in self.players:
             self.players[player_id] = NovelMomentumRating(
-                player_id, initial_rating)
+                player_id, initial_rating
+            )
 
-    def predict_future_trajectory(self, player_id: str,
-                                  games_ahead: int = 10) -> List[float]:
+    def predict_future_trajectory(
+        self, player_id: str, games_ahead: int = 10
+    ) -> List[float]:
         """
         Predict how player's rating will change over next N games.
 
@@ -168,8 +181,9 @@ class NovelMomentumSystem:
 
         return trajectory[1:]  # exclude current rating
 
-    def predict_game_outcome(self, player1_id: str,
-                             player2_id: str) -> Tuple[float, float]:
+    def predict_game_outcome(
+        self, player1_id: str, player2_id: str
+    ) -> Tuple[float, float]:
         """
         Predict outcome between two players.
 
@@ -191,9 +205,14 @@ class NovelMomentumSystem:
 
         return p1_win_prob, p2_win_prob
 
-    def update_after_game(self, player1_id: str, player2_id: str,
-                          player1_result: float, player1_features: List[float],
-                          player2_features: List[float]) -> None:
+    def update_after_game(
+        self,
+        player1_id: str,
+        player2_id: str,
+        player1_result: float,
+        player1_features: List[float],
+        player2_features: List[float],
+    ) -> None:
         """
         Update ratings after a game.
 
@@ -219,15 +238,24 @@ class NovelMomentumSystem:
         p2 = self.players[player2_id]
 
         # update both players' ratings
-        p1.update_rating(p2.momentum_rating, player1_result,
-                         player1_features, self.momentum_weights)
+        p1.update_rating(
+            p2.momentum_rating,
+            player1_result,
+            player1_features,
+            self.momentum_weights,
+        )
         p2_result = 1.0 - player1_result  # Two-player zero-sum
-        p2.update_rating(p1.momentum_rating, p2_result,
-                         player2_features, self.momentum_weights)
+        p2.update_rating(
+            p1.momentum_rating,
+            p2_result,
+            player2_features,
+            self.momentum_weights,
+        )
 
 
-def evaluate_future_prediction_accuracy(test_games: List[Any],
-                                        weights: list) -> Dict[str, float]:
+def evaluate_future_prediction_accuracy(
+    test_games: List[Any], weights: list
+) -> Dict[str, float]:
     """
     Evaluate prediction accuracy on future games.
 
@@ -239,7 +267,7 @@ def evaluate_future_prediction_accuracy(test_games: List[Any],
     - Dict[str, float]: accuracy metrics
     """
     if not test_games:
-        return {'accuracy': 0.0, 'brier_score': 0.0, 'total_games': 0}
+        return {"accuracy": 0.0, "brier_score": 0.0, "total_games": 0}
 
     total_games = len(test_games)
     predictions = []
@@ -251,8 +279,9 @@ def evaluate_future_prediction_accuracy(test_games: List[Any],
 
     for game in test_games:
         # this is the way elo is usually predicted
-        elo_expected = 1 / \
-            (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+        elo_expected = 1 / (
+            1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400)
+        )
 
         # calculate momentum adjustment
         features = game.to_feature_vector()
@@ -279,11 +308,12 @@ def evaluate_future_prediction_accuracy(test_games: List[Any],
 
         # log loss
         enhanced_prob_clipped = max(
-            1e-15, min(1 - 1e-15, enhanced_prob))  # Prevent log(0)
-        log_loss_sum += -(game.actual_result *
-                          math.log(enhanced_prob_clipped) +
-                          (1 - game.actual_result) *
-                          math.log(1 - enhanced_prob_clipped))
+            1e-15, min(1 - 1e-15, enhanced_prob)
+        )  # Prevent log(0)
+        log_loss_sum += -(
+            game.actual_result * math.log(enhanced_prob_clipped)
+            + (1 - game.actual_result) * math.log(1 - enhanced_prob_clipped)
+        )
 
     # Basic metrics
     accuracy = correct_predictions / total_games
@@ -291,14 +321,21 @@ def evaluate_future_prediction_accuracy(test_games: List[Any],
     log_loss = log_loss_sum / total_games
 
     # Elo baseline metrics
-    elo_correct = sum(1 for i, pred in enumerate(elo_predictions) if
-                      (pred > 0.5 and actual_results[i] > 0.5) or
-                      (pred <= 0.5 and actual_results[i] <= 0.5))
+    elo_correct = sum(
+        1
+        for i, pred in enumerate(elo_predictions)
+        if (pred > 0.5 and actual_results[i] > 0.5)
+        or (pred <= 0.5 and actual_results[i] <= 0.5)
+    )
     elo_accuracy = elo_correct / total_games
 
-    elo_brier = (sum((pred - actual) ** 2 for pred,
-                     actual in zip(elo_predictions, actual_results))
-                 / total_games)
+    elo_brier = (
+        sum(
+            (pred - actual) ** 2
+            for pred, actual in zip(elo_predictions, actual_results)
+        )
+        / total_games
+    )
 
     try:
         auc_roc = roc_auc_score(actual_results, predictions)
@@ -310,73 +347,91 @@ def evaluate_future_prediction_accuracy(test_games: List[Any],
     # calibration metrics
     try:
         fraction_of_positives, mean_predicted_value = calibration_curve(
-            actual_results, predictions, n_bins=10)
+            actual_results, predictions, n_bins=10
+        )
         calibration_error = np.mean(
-            np.abs(fraction_of_positives - mean_predicted_value))
+            np.abs(fraction_of_positives - mean_predicted_value)
+        )
     except Exception:
         calibration_error = 0.0
 
     # different threshold accuracies
     threshold_accuracies = {}
     for threshold in [0.4, 0.45, 0.5, 0.55, 0.6]:
-        thresh_correct = sum(1 for pred, actual in
-                             zip(predictions, actual_results)
-                             if (pred > threshold and actual > 0.5) or
-                             (pred <= threshold and actual <= 0.5))
-        threshold_accuracies[f'threshold_{
-            threshold}'] = thresh_correct / total_games
+        thresh_correct = sum(
+            1
+            for pred, actual in zip(predictions, actual_results)
+            if (pred > threshold and actual > 0.5)
+            or (pred <= threshold and actual <= 0.5)
+        )
+        threshold_accuracies[
+            f"threshold_{
+            threshold}"
+        ] = (thresh_correct / total_games)
 
     # confidence-weighted accuracy
-    confidence_weighted_acc = sum(
-        abs(pred - 0.5) * 2 * ((pred > 0.5 and actual > 0.5)
-                               or (pred <= 0.5 and actual <= 0.5))
-        for pred, actual in zip(predictions, actual_results)
-    ) / sum(abs(pred - 0.5) * 2 for pred in predictions) if predictions else 0
+    confidence_weighted_acc = (
+        sum(
+            abs(pred - 0.5)
+            * 2
+            * ((pred > 0.5 and actual > 0.5) or (pred <= 0.5 and actual <= 0.5))
+            for pred, actual in zip(predictions, actual_results)
+        )
+        / sum(abs(pred - 0.5) * 2 for pred in predictions)
+        if predictions
+        else 0
+    )
 
     return {
-        'accuracy': accuracy,
-        'brier_score': brier_score,
-        'log_loss': log_loss,
-        'auc_roc': auc_roc,
-        'calibration_error': calibration_error,
-        'confidence_weighted_accuracy': confidence_weighted_acc,
-        'total_games': total_games,
-
+        "accuracy": accuracy,
+        "brier_score": brier_score,
+        "log_loss": log_loss,
+        "auc_roc": auc_roc,
+        "calibration_error": calibration_error,
+        "confidence_weighted_accuracy": confidence_weighted_acc,
+        "total_games": total_games,
         # baseline comparisons
-        'elo_accuracy': elo_accuracy,
-        'elo_brier_score': elo_brier,
-        'elo_auc_roc': elo_auc,
-
+        "elo_accuracy": elo_accuracy,
+        "elo_brier_score": elo_brier,
+        "elo_auc_roc": elo_auc,
         # improvements
-        'accuracy_improvement': accuracy - elo_accuracy,
-        'brier_improvement': elo_brier - brier_score,  # Lower is better
-        'auc_improvement': auc_roc - elo_auc,
-
+        "accuracy_improvement": accuracy - elo_accuracy,
+        "brier_improvement": elo_brier - brier_score,  # Lower is better
+        "auc_improvement": auc_roc - elo_auc,
         **threshold_accuracies,
-
         # Precision: True Positives / (True Positives + False Positives)
         # Measures accuracy of positive predictions,
         #   predicted wins that were wins
-        'precision': (sum(1 for pred, actual in zip(predictions,
-                                                    actual_results)
-                          if pred > 0.5 and actual > 0.5) /
-                      sum(1 for pred in predictions if pred > 0.5)
-                      if sum(1 for pred in predictions if pred > 0.5) >
-                      0 else 0),
+        "precision": (
+            sum(
+                1
+                for pred, actual in zip(predictions, actual_results)
+                if pred > 0.5 and actual > 0.5
+            )
+            / sum(1 for pred in predictions if pred > 0.5)
+            if sum(1 for pred in predictions if pred > 0.5) > 0
+            else 0
+        ),
         # Recall: True Positives / (True Positives + False Negatives)
         # Measures completeness of positive predictions,
         #   actual wins that were predicted
-        'recall': (sum(1 for pred, actual in zip(predictions, actual_results)
-                       if pred > 0.5 and actual > 0.5) /
-                   sum(1 for actual in actual_results if actual > 0.5)
-                   if sum(1 for actual in actual_results if actual > 0.5)
-                   > 0 else 0),
-        'f1_score': 0.0  # Will be calculated below
+        "recall": (
+            sum(
+                1
+                for pred, actual in zip(predictions, actual_results)
+                if pred > 0.5 and actual > 0.5
+            )
+            / sum(1 for actual in actual_results if actual > 0.5)
+            if sum(1 for actual in actual_results if actual > 0.5) > 0
+            else 0
+        ),
+        "f1_score": 0.0,  # Will be calculated below
     }
 
 
-def detect_cavities(momentum_weights: list, game_history: List[Any],
-                    threshold: float = 0.15) -> List[dict]:
+def detect_cavities(
+    momentum_weights: list, game_history: List[Any], threshold: float = 0.15
+) -> List[dict]:
     """
     Detect rating cavities in game history.
 
@@ -392,19 +447,20 @@ def detect_cavities(momentum_weights: list, game_history: List[Any],
 
     for i in range(20, len(game_history)):  # need 20 games history
         # calculate recent actual performance
-        recent_games = game_history[i-20:i]
+        recent_games = game_history[i - 20 : i]
         actual_win_rate = sum(g.actual_result for g in recent_games) / 20
         current_game = game_history[i]
 
         # calculate momentum-enhanced prediction
-        elo_expected = (1 /
-                        (1 + 10 **
-                         ((current_game.opponent_elo -
-                           current_game.pre_game_elo)
-                          / 400)))
+        elo_expected = 1 / (
+            1
+            + 10
+            ** ((current_game.opponent_elo - current_game.pre_game_elo) / 400)
+        )
         features = current_game.to_feature_vector()
         momentum_adjustment = sum(
-            w * f for w, f in zip(momentum_weights, features))
+            w * f for w, f in zip(momentum_weights, features)
+        )
         momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
         expected_win_rate = elo_expected + momentum_adjustment
         expected_win_rate = max(0.01, min(0.99, expected_win_rate))
@@ -412,20 +468,26 @@ def detect_cavities(momentum_weights: list, game_history: List[Any],
         # detect cavity
         performance_gap = abs(actual_win_rate - expected_win_rate)
         if performance_gap > threshold:
-            cavities.append({
-                'game_index': i,
-                'performance_gap': performance_gap,
-                'actual_rate': actual_win_rate,
-                'expected_rate': expected_win_rate,
-                'type': 'underrated' if (actual_win_rate
-                                         > expected_win_rate) else 'overrated'
-            })
+            cavities.append(
+                {
+                    "game_index": i,
+                    "performance_gap": performance_gap,
+                    "actual_rate": actual_win_rate,
+                    "expected_rate": expected_win_rate,
+                    "type": (
+                        "underrated"
+                        if (actual_win_rate > expected_win_rate)
+                        else "overrated"
+                    ),
+                }
+            )
 
     return cavities
 
 
-def calculate_cavity_metrics(momentum_weights: list,
-                             game_history: List[Any]) -> dict:
+def calculate_cavity_metrics(
+    momentum_weights: list, game_history: List[Any]
+) -> dict:
     """
     Calculate comprehensive cavity metrics for fitness evaluation.
 
@@ -443,10 +505,10 @@ def calculate_cavity_metrics(momentum_weights: list,
 
     if not cavities:
         return {
-            'frequency': 0.0,
-            'avg_duration': 0.0,
-            'max_gap': 0.0,
-            'total_episodes': 0
+            "frequency": 0.0,
+            "avg_duration": 0.0,
+            "max_gap": 0.0,
+            "total_episodes": 0,
         }
 
     # calculate cavity duration (consecutive cavity games)
@@ -454,7 +516,7 @@ def calculate_cavity_metrics(momentum_weights: list,
     current_episode = []
 
     for i, cavity in enumerate(cavities):
-        if i == 0 or cavity['game_index'] != cavities[i-1]['game_index'] + 1:
+        if i == 0 or cavity["game_index"] != cavities[i - 1]["game_index"] + 1:
             # New cavity episode
             if current_episode:
                 cavity_episodes.append(current_episode)
@@ -470,21 +532,25 @@ def calculate_cavity_metrics(momentum_weights: list,
     # calculate some metrics
     total_games = len(game_history)
     cavity_frequency = len(cavities) / total_games
-    avg_duration = sum(len(episode) for episode in cavity_episodes) / \
-        len(cavity_episodes) if cavity_episodes else 0
-    max_gap = max(cavity['performance_gap'] for cavity in cavities)
+    avg_duration = (
+        sum(len(episode) for episode in cavity_episodes) / len(cavity_episodes)
+        if cavity_episodes
+        else 0
+    )
+    max_gap = max(cavity["performance_gap"] for cavity in cavities)
 
     return {
-        'frequency': cavity_frequency,
-        'avg_duration': avg_duration,
-        'max_gap': max_gap,
-        'total_episodes': len(cavity_episodes),
-        'cavities': cavities
+        "frequency": cavity_frequency,
+        "avg_duration": avg_duration,
+        "max_gap": max_gap,
+        "total_episodes": len(cavity_episodes),
+        "cavities": cavities,
     }
 
 
-def evaluate_direct_comparison(test_games: List[Any],
-                               weights: list) -> Dict[str, Any]:
+def evaluate_direct_comparison(
+    test_games: List[Any], weights: list
+) -> Dict[str, Any]:
     """
     Direct comparison: Momentum system vs traditional Elo.
 
@@ -499,8 +565,12 @@ def evaluate_direct_comparison(test_games: List[Any],
     Evaluates both systems on the same games and computes improvement metrics.
     """
     if not test_games:
-        return {'momentum_accuracy': 0.0, 'elo_accuracy': 0.0,
-                'improvement': 0.0, 'total_games': 0}
+        return {
+            "momentum_accuracy": 0.0,
+            "elo_accuracy": 0.0,
+            "improvement": 0.0,
+            "total_games": 0,
+        }
 
     momentum_correct = 0
     elo_correct = 0
@@ -508,8 +578,9 @@ def evaluate_direct_comparison(test_games: List[Any],
 
     for game in test_games:
         # calculate momentum prediction
-        elo_expected = 1 / \
-            (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+        elo_expected = 1 / (
+            1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400)
+        )
         features = game.to_feature_vector()
         momentum_adjustment = sum(w * f for w, f in zip(weights, features))
         momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
@@ -532,14 +603,15 @@ def evaluate_direct_comparison(test_games: List[Any],
     improvement = momentum_accuracy - elo_accuracy
 
     return {
-        'momentum_accuracy': float(momentum_accuracy),
-        'elo_accuracy': float(elo_accuracy),
-        'improvement': float(improvement),
-        'relative_improvement': float((improvement / elo_accuracy * 100)
-                                      if elo_accuracy > 0 else 0),
-        'total_games': float(total_games),
-        'momentum_correct': float(momentum_correct),
-        'elo_correct': float(elo_correct)
+        "momentum_accuracy": float(momentum_accuracy),
+        "elo_accuracy": float(elo_accuracy),
+        "improvement": float(improvement),
+        "relative_improvement": float(
+            (improvement / elo_accuracy * 100) if elo_accuracy > 0 else 0
+        ),
+        "total_games": float(total_games),
+        "momentum_correct": float(momentum_correct),
+        "elo_correct": float(elo_correct),
     }
 
 
@@ -547,9 +619,9 @@ class NovelTemporalValidator:
     """Advanced temporal validation for true future prediction"""
 
     @staticmethod
-    def create_prediction_horizon_split(dataset: List[Any],
-                                        horizon: int = 30) -> Tuple[List[Any],
-                                                                    List[Any]]:
+    def create_prediction_horizon_split(
+        dataset: List[Any], horizon: int = 30
+    ) -> Tuple[List[Any], List[Any]]:
         """
         Split dataset with prediction horizon.
 
@@ -569,9 +641,9 @@ class NovelTemporalValidator:
         return sorted_data[:train_end_idx], sorted_data[test_start_idx:]
 
     @staticmethod
-    def evaluate_cavity_prevention(dataset: List[Any],
-                                   momentum_weights: List[float]
-                                   ) -> Dict[str, float]:
+    def evaluate_cavity_prevention(
+        dataset: List[Any], momentum_weights: List[float]
+    ) -> Dict[str, float]:
         """
         Evaluate how well the system prevents cavities.
 
@@ -591,21 +663,26 @@ class NovelTemporalValidator:
 
         for i, game in enumerate(dataset):
             momentum_system.update_after_game(
-                game.username, "opponent", game.actual_result,
-                game.to_feature_vector(), momentum_weights
+                game.username,
+                "opponent",
+                game.actual_result,
+                game.to_feature_vector(),
+                momentum_weights,
             )
 
             # check for cavity (performance vs rating mismatch)
             if i >= 20:
-                recent_games = dataset[i-20:i]
+                recent_games = dataset[i - 20 : i]
                 recent_win_rate = sum(
-                    g.actual_result for g in recent_games) / len(recent_games)
+                    g.actual_result for g in recent_games
+                ) / len(recent_games)
 
                 player = momentum_system.players.get(game.username)
                 if player:
                     # expected win rate based on momentum rating
                     expected_win_rate = player.calculate_win_probability(
-                        game.opponent_elo)
+                        game.opponent_elo
+                    )
 
                     # cavity detection,significant performance gap of 20%
                     if abs(recent_win_rate - expected_win_rate) > 0.2:
@@ -614,13 +691,15 @@ class NovelTemporalValidator:
                     else:
                         if current_cavity_start is not None:
                             cavity_episodes += 1
-                            total_cavity_duration += (i - current_cavity_start)
+                            total_cavity_duration += i - current_cavity_start
                             current_cavity_start = None
 
         return {
-            'cavity_episodes': cavity_episodes,
-            'avg_cavity_duration': (total_cavity_duration /
-                                    max(cavity_episodes, 1)),
-            'cavity_frequency': (cavity_episodes / len(dataset)
-                                 if dataset else 0.0)
+            "cavity_episodes": cavity_episodes,
+            "avg_cavity_duration": (
+                total_cavity_duration / max(cavity_episodes, 1)
+            ),
+            "cavity_frequency": (
+                cavity_episodes / len(dataset) if dataset else 0.0
+            ),
         }

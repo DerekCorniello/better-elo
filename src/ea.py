@@ -1,13 +1,19 @@
-from models import UserGameData
-import random
-from typing import List
-from deap import base, creator, tools
-import sys
 import os
+import random
+import sys
+from typing import List
+
+from deap import base, creator, tools
+
+from .config import config
+from .logging_config import get_logger
+from .models import UserGameData
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
+
+logger = get_logger(__name__)
 
 
 # clean up existing DEAP creator classes to avoid conflicts
@@ -21,25 +27,41 @@ except Exception:
 
 
 def predict_momentum_adjustment(weights, features: list) -> float:
+    """Predict momentum adjustment for true Elo using evolved weights.
+
+    Args:
+        weights: List of evolved weight values.
+        features: List of feature values for momentum calculation.
+
+    Returns:
+        float: Predicted momentum adjustment.
     """
-    Predict momentum adjustment for true Elo using evolved weights.
-    """
-    return float(sum(float(weights[i]) * float(features[i])
-                     for i in range(min(len(weights), len(features)))))
+    return float(
+        sum(
+            float(weights[i]) * float(features[i])
+            for i in range(min(len(weights), len(features)))
+        )
+    )
 
 
 def calculate_momentum_prediction(game, momentum_weights):
-    """
-    Calculate momentum-enhanced prediction for a single game
+    """Calculate momentum-enhanced prediction for a single game.
+
+    Args:
+        game: UserGameData object containing game information.
+        momentum_weights: List of weights for momentum calculation.
+
+    Returns:
+        float: Enhanced prediction probability.
     """
     # traditional Elo prediction
-    elo_expected = 1 / \
-        (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+    elo_expected = 1 / (
+        1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400)
+    )
 
     # momentum adjustment
     features = game.to_feature_vector()
-    momentum_adjustment = sum(
-        w * f for w, f in zip(momentum_weights, features))
+    momentum_adjustment = sum(w * f for w, f in zip(momentum_weights, features))
     momentum_adjustment = max(-0.2, min(0.2, momentum_adjustment))
 
     # enhanced prediction
@@ -48,12 +70,19 @@ def calculate_momentum_prediction(game, momentum_weights):
 
     return enhanced_prob
 
+def evaluate_individual(
+    individual: list, dataset: List[UserGameData]
+) -> tuple:
+    """Evaluate fitness by direct comparison: Momentum system vs traditional Elo.
 
-def evaluate_individual(individual: list,
-                        dataset: List[UserGameData]) -> tuple:
-    """
-    Evaluate fitness by direct comparison: Momentum system vs traditional Elo
-    Optimizes for better matchmaking through improved prediction accuracy
+    Optimizes for better matchmaking through improved prediction accuracy.
+
+    Args:
+        individual: List of weight values for momentum calculation.
+        dataset: List of UserGameData objects for evaluation.
+
+    Returns:
+        tuple: Fitness value (negative improvement + regularization).
     """
     momentum_correct = 0
     elo_correct = 0
@@ -65,8 +94,9 @@ def evaluate_individual(individual: list,
         momentum_win = 1 if momentum_prob > 0.5 else 0
 
         # calculate Elo prediction
-        elo_prob = 1 / \
-            (1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400))
+        elo_prob = 1 / (
+            1 + 10 ** ((game.opponent_elo - game.pre_game_elo) / 400)
+        )
         elo_win = 1 if elo_prob > 0.5 else 0
 
         actual_win = 1 if game.actual_result > 0.5 else 0
@@ -95,15 +125,23 @@ creator.create("Individual", list, fitness=creator.FitnessMin)
 
 toolbox = base.Toolbox()
 toolbox.register("attr_float", random.uniform, -50, 50)
-toolbox.register("individual", tools.initRepeat,
-                 creator.Individual, toolbox.attr_float, 6)
+toolbox.register(
+    "individual", tools.initRepeat, creator.Individual, toolbox.attr_float, 6
+)
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 toolbox.register("evaluate", evaluate_individual)
 
 
 def differential_evolution_mutation(pop, F, CR):
-    """
-    DE/rand/1/bin mutation strategy
+    """DE/rand/1/bin mutation strategy.
+
+    Args:
+        pop: Current population of individuals.
+        F: Differential weight parameter.
+        CR: Crossover rate parameter.
+
+    Returns:
+        list: New population after mutation and crossover.
     """
     new_pop = []
     n = len(pop)
@@ -123,7 +161,7 @@ def differential_evolution_mutation(pop, F, CR):
         # Crossover: binomial crossover
         trial = []
         for d in range(dim):
-            if random.random() < CR or d == random.randint(0, dim-1):
+            if random.random() < CR or d == random.randint(0, dim - 1):
                 trial.append(mutant[d])
             else:
                 trial.append(pop[i][d])
@@ -135,13 +173,33 @@ def differential_evolution_mutation(pop, F, CR):
     return new_pop
 
 
-def run_evolution(dataset: List[UserGameData], pop_size: int = 800,
-                  ngen: int = 1000, cxpb: float = 0.8,
-                  mutpb: float = 0.3) -> tuple:
+def run_evolution(
+    dataset: List[UserGameData],
+    pop_size: int | None = None,
+    ngen: int | None = None,
+    cxpb: float = 0.8,
+    mutpb: float = 0.3,
+) -> tuple:
+    """Run Differential Evolution algorithm to find optimal feature weights.
+
+    DE/rand/1/bin strategy with self-adaptive parameters.
+
+    Args:
+        dataset: List of UserGameData objects for training.
+        pop_size: Population size (uses config if None).
+        ngen: Number of generations (uses config if None).
+        cxpb: Crossover probability.
+        mutpb: Mutation probability.
+
+    Returns:
+        tuple: Best individual found during evolution.
     """
-    Run Differential Evolution algorithm to find optimal feature weights
-    DE/rand/1/bin strategy with self-adaptive parameters
-    """
+    # Use config values if not provided
+    if pop_size is None:
+        pop_size = config.evolution["population_size"]
+    if ngen is None:
+        ngen = config.evolution["generations"]
+
     pop = toolbox.population(n=pop_size)
     fitnesses = []
     for ind in pop:
@@ -154,8 +212,8 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 800,
     hof.update(pop)
 
     # DE parameters with self-adaptation
-    F = 0.5  # differential weight
-    CR = 0.9  # crossover rate
+    F = config.evolution["f_value"]
+    CR = config.evolution["cr_value"]
     F_min, F_max = 0.3, 0.9
     CR_min, CR_max = 0.5, 0.9
 
@@ -165,24 +223,32 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 800,
 
     for gen in range(ngen):
         if gen % 50 == 0 or gen == ngen - 1:
-            best_fitness = hof[0].fitness.values[0] if hof else float('inf')
-            print(f"Generation {
-                  gen+1}/{ngen}: Best fitness = {best_fitness:.4f}\
-                          (F={F:.3f}, CR={CR:.3f})")
+            best_fitness = hof[0].fitness.values[0] if hof else float("inf")
+            logger.info(
+                "Generation %d/%d: Best fitness = %.4f (F=%.3f, CR=%.3f)",
+                gen + 1,
+                ngen,
+                best_fitness,
+                F,
+                CR,
+            )
 
             # Track fitness for convergence detection
             best_fitness_history.append(best_fitness)
 
             # Check for convergence
             if len(best_fitness_history) >= 2:
-                improvement = best_fitness_history[-2] - \
-                    best_fitness_history[-1]
+                improvement = (
+                    best_fitness_history[-2] - best_fitness_history[-1]
+                )
                 if improvement < 0.0001:
                     no_improvement_count += 1
                     if no_improvement_count >= 2:
-                        print(f"DE converged after {
-                              gen+1} generations \
-                              \n(improvement < 0.0001 for 100 generations)")
+                        logger.info(
+                            "DE converged after %d generations "
+                            "(improvement < 0.0001 for 100 generations)",
+                            gen + 1,
+                        )
                         break
                 else:
                     no_improvement_count = 0
@@ -224,7 +290,8 @@ def run_evolution(dataset: List[UserGameData], pop_size: int = 800,
         if len(hof) > 0:
             # sort population by fitness
             sorted_indices = sorted(
-                range(len(new_pop)), key=lambda i: new_fitnesses[i])
+                range(len(new_pop)), key=lambda i: new_fitnesses[i]
+            )
 
             # replace worst individuals with elites
             for i, elite in enumerate(hof):
